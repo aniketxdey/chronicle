@@ -7,6 +7,7 @@ markdown so it can be reopened and downloaded later.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from datetime import datetime, timedelta, timezone
@@ -21,48 +22,56 @@ PRESETS: list[dict] = [
         "title": "General",
         "keywords": "",
         "brief": "Use this as background on what the user was doing. Ground every step in it, and ask before acting on anything it doesn't cover.",
+        "sections": "What the user was doing; Apps, documents, and pages in use; People, projects, and customers involved; Timeline",
     },
     {
         "id": "data-analysis",
         "title": "Data analysis",
         "keywords": "data csv sql query notebook dashboard spreadsheet metrics",
         "brief": "You're continuing a data analysis. Reuse the datasets, files, queries, notebooks, and dashboards below instead of starting over, and match the metrics and filters the user already chose.",
+        "sections": "Question or goal; Datasets, tables, and sources; Queries, notebooks, and code; Metrics, filters, and findings so far; Dashboards and outputs",
     },
     {
         "id": "job-applications",
         "title": "Applying to jobs",
         "keywords": "job careers role resume cover application linkedin greenhouse",
         "brief": "You're helping with job applications. Use the postings, companies, and roles below, keep a list of what was already applied to, and reuse answers the user already wrote. Never submit an application without confirmation.",
+        "sections": "Companies and roles; Status of each application; Materials and answers the user already wrote; Deadlines, contacts, and requirements",
     },
     {
         "id": "coding",
         "title": "Software development",
         "keywords": "github pr ticket error test repo commit branch",
         "brief": "You're continuing software work. Start from the files, identifiers, tickets, and PRs below, and check the most recent errors and terminal output before changing code.",
+        "sections": "Repository, branch, and files; Tickets and PRs; Errors, test failures, and terminal output; Changes in progress",
     },
     {
         "id": "research",
         "title": "Research",
         "keywords": "search paper article docs arxiv wikipedia notes report",
         "brief": "You're continuing research. The searches and topics below show what was already looked at. Build on the sources the user read and cite them, rather than repeating searches.",
+        "sections": "The question being researched; Sources read, with URLs; Findings so far; Searches already run",
     },
     {
         "id": "writing",
         "title": "Writing",
         "keywords": "doc draft notes outline essay docs notion",
         "brief": "You're helping with writing. The documents and drafts below are the current state. Keep the user's structure and voice, and don't rewrite parts they didn't ask about.",
+        "sections": "Documents and drafts; Structure and current state; Voice and style notes; Feedback and comments",
     },
     {
         "id": "meeting-follow-up",
         "title": "Meeting follow-up",
         "keywords": "meeting call zoom agenda notes action decision",
         "brief": "You're following up on meetings. Use the decisions and action items below, address people by the names in the transcript, and draft messages for review rather than sending them.",
+        "sections": "Meetings (who and when); Decisions; Action items with owners; Follow-ups to draft",
     },
     {
         "id": "customer-work",
         "title": "Customer and sales",
         "keywords": "customer account deal crm email invoice contract",
         "brief": "You're helping with customer work. Use the customers, accounts, tickets, and deadlines below, and keep promises the user already made in writing.",
+        "sections": "Customers and accounts; Commitments and deadlines; Tickets and issues; Messages to send",
     },
 ]
 _BY_ID = {item["id"]: item for item in PRESETS}
@@ -77,7 +86,7 @@ _DECISION = re.compile(r"\b(decided|agreed|going with|we'll go|final|approved|se
 
 
 def presets() -> list[dict]:
-    return [{k: item[k] for k in ("id", "title", "brief")} for item in PRESETS]
+    return [{k: item[k] for k in ("id", "title", "brief", "sections")} for item in PRESETS]
 
 
 def preset(preset_id: str | None) -> dict:
@@ -108,23 +117,83 @@ def _task(task: str | None, chosen: dict) -> str | None:
     return " ".join(parts) or None
 
 
-def _document(pack: dict, chosen: dict, task: str | None, scope: dict) -> str:
+def _parts(pack: dict, chosen: dict, task: str | None, scope: dict) -> tuple[list[str], str]:
     head = [f"# {chosen['title']} context · {scope['label']}", "", f"> {chosen['brief']}"]
     if task:
         head += ["", f"Task: {task}"]
     body = pack["markdown"].split("\n", 1)[1] if "\n" in pack["markdown"] else ""
     body = re.sub(r"^Task: .*\n", "", body, count=1)
-    return "\n".join(head) + "\n" + body
+    return head, body
+
+
+WRITER_VERSION = 1
+WRITER_SOURCE_CHARS = 40000
+_WRITER_SYSTEM = """You write context files that hand an AI agent the state of a user's work, built from a recording of their screen.
+The agent reading your file will continue the work, so it needs specifics, not a narrative.
+
+Workflow: {title}. {brief}
+Use sections that fit this workflow, such as: {sections}. Skip any section the evidence has nothing for, and add one if the evidence needs it.
+
+Rules:
+- Use only facts in the recorded evidence. Never invent names, numbers, URLs, file paths, or statuses. Say so when something is unclear.
+- Open with two to four sentences: what the user was doing and where they left off.
+- Keep URLs, file names, identifiers, and quoted text exact. Cite a frame as (frame N) when a fact comes from one.
+- Leave out apps and pages that don't matter to this workflow.
+- End with "## Open threads": unfinished items and likely next steps, each grounded in the evidence.
+- Markdown only, starting at "##" headings. No title and no preamble. Stay under 900 words."""
+
+
+def _write(pack: dict, chosen: dict, task: str | None, scope: dict, body: str) -> tuple[str | None, str | None, str | None]:
+    """The model-written part of a context file: (text, model, reason it wasn't written)."""
+    from chronicle import llm
+
+    if not (pack.get("recent") or pack.get("graph", {}).get("nodes")):
+        return None, None, "nothing was recorded in this scope"
+    try:
+        provider = llm.provider()
+    except llm.LLMError as exc:
+        return None, None, exc.message
+    if provider is None:
+        return None, None, None
+    system = _WRITER_SYSTEM.format(**chosen)
+    user = f"Scope: {scope['label']}\nTask: {task or 'none given'}\n\nRecorded evidence:\n{body[:WRITER_SOURCE_CHARS]}"
+    key = hashlib.sha256(json.dumps(["context", WRITER_VERSION, provider.name, provider.model, system, user]).encode()).hexdigest()
+    with db.conn() as connection:
+        row = connection.execute("SELECT response FROM llm_cache WHERE key = ?", (key,)).fetchone()
+    if row is not None:
+        return json.loads(row["response"]), provider.model, None
+    try:
+        text = provider.complete(system, user)
+    except Exception as exc:  # noqa: BLE001
+        reason = getattr(exc, "message", None) or f"{type(exc).__name__}: {exc}"
+        db.set_setting("last_llm_error", f"{utc_iso()} context {chosen['id']}: {reason}")
+        return None, None, reason
+    text = re.sub(r"\A\s*# [^\n]*\n+", "", text.strip())
+    with db.conn() as connection:
+        connection.execute(
+            "INSERT OR REPLACE INTO llm_cache(key, model, response, created_at) VALUES (?, ?, ?, ?)",
+            (key, provider.model, json.dumps(text), utc_iso()),
+        )
+    return text, provider.model, None
 
 
 def build(task: str | None = None, preset_id: str | None = None, session_id: int | None = None,
-          minutes: int | None = None) -> dict:
+          minutes: int | None = None, write: bool = True) -> dict:
     chosen = preset(preset_id)
     scope = window(session_id, minutes)
     pack = context.build(task=_task(task, chosen), minutes=None if session_id else minutes, session_id=session_id, max_nodes=32)
     pack["task"] = task or None
     pack["preset"] = chosen["id"]
-    pack["markdown"] = _document(pack, chosen, task, scope)
+    head, body = _parts(pack, chosen, task, scope)
+    text, model, reason = _write(pack, chosen, task, scope, body) if write else (None, None, None)
+    if text:
+        evidence = re.sub(r"^(#{2,5}) ", r"#\1 ", body.strip(), flags=re.M)
+        head += ["", f"_Written by {model} from the recording. The evidence it was given follows the open threads._"]
+        pack["markdown"] = "\n".join(head) + "\n\n" + text + "\n\n---\n\n## Recorded evidence\n\n" + evidence + "\n"
+    else:
+        pack["markdown"] = "\n".join(head) + "\n" + body
+    pack["written_by"] = model
+    pack["writer_note"] = reason
     pack["scope"] = {k: scope[k] for k in ("session_id", "start", "end", "label")}
     return pack
 
@@ -224,27 +293,41 @@ def _cypher(data: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def export(fmt: str = "md", preset_id: str | None = None, session_id: int | None = None,
-           context_id: int | None = None, minutes: int | None = None, task: str | None = None) -> tuple[str, str, str]:
-    """Return (filename, media type, body) for a download."""
-    if fmt not in FORMATS:
-        raise db.ChronicleError(f"format must be one of {', '.join(FORMATS)}", 400)
-    media_type, extension = FORMATS[fmt]
+def _resolve(preset_id, session_id, context_id, minutes, task) -> tuple[dict | None, dict, int | None, int | None, str | None]:
     saved = get(context_id) if context_id else None
     if saved:
         session_id = session_id or saved["session_id"]
         minutes = minutes or saved["minutes"]
         task = task or saved["task"]
         preset_id = preset_id or saved["preset"]
-    chosen = preset(preset_id)
+    return saved, preset(preset_id), session_id, minutes, task
+
+
+def file(preset_id: str | None = None, session_id: int | None = None, context_id: int | None = None,
+         minutes: int | None = None, task: str | None = None) -> dict:
+    """One workflow's context file, and whether the model wrote it."""
+    saved, chosen, session_id, minutes, task = _resolve(preset_id, session_id, context_id, minutes, task)
+    scope = window(session_id, minutes)
+    name = _slug(f"chronicle-{scope['label']}-{chosen['id']}") + ".md"
+    if saved and chosen["id"] == saved["preset"]:
+        return {"filename": name, "preset": chosen["id"], "markdown": saved["markdown"], "written_by": None, "writer_note": None, "saved": True}
+    pack = build(task, chosen["id"], session_id, minutes)
+    return {"filename": name, "preset": chosen["id"], "markdown": pack["markdown"], "written_by": pack["written_by"],
+            "writer_note": pack["writer_note"], "saved": False}
+
+
+def export(fmt: str = "md", preset_id: str | None = None, session_id: int | None = None,
+           context_id: int | None = None, minutes: int | None = None, task: str | None = None) -> tuple[str, str, str]:
+    """Return (filename, media type, body) for a download."""
+    if fmt not in FORMATS:
+        raise db.ChronicleError(f"format must be one of {', '.join(FORMATS)}", 400)
+    media_type, extension = FORMATS[fmt]
+    if fmt == "md":
+        found = file(preset_id, session_id, context_id, minutes, task)
+        return found["filename"], media_type, found["markdown"]
+    _, chosen, session_id, minutes, task = _resolve(preset_id, session_id, context_id, minutes, task)
     scope = window(session_id, minutes)
     name = _slug(f"chronicle-{scope['label']}-{chosen['id']}")
-    if fmt == "md":
-        if saved and chosen["id"] == saved["preset"]:
-            body = saved["markdown"]
-        else:
-            body = build(task, chosen["id"], session_id, minutes)["markdown"]
-        return f"{name}.md", media_type, body
     data = graph.export(session_id, limit=600)
     if fmt == "json":
         pack = build(task, chosen["id"], session_id, minutes)

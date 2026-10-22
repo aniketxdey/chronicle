@@ -7,6 +7,7 @@ import hmac
 import json
 import os
 import secrets
+import shutil
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -17,7 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from chronicle import __version__, capture, clients, content, context, contexts, db, graph, mcp_server, meetings, pipes, search, seed, sessions, tuner, workflows
+from chronicle import __version__, capture, clients, content, context, contexts, db, graph, llm, mcp_server, meetings, pipes, search, seed, sessions, tuner, workflows
 from chronicle import ask as ask_mod
 from chronicle.timeutil import parse_time, utc_iso
 
@@ -402,6 +403,17 @@ def context_search(q: str = "", session_id: int | None = None, start: str | None
     return contexts.find(q, session_id, _parse(start), _parse(end), minutes, max(1, min(limit, 100)))
 
 
+@app.get("/contexts/file")
+def context_file(preset: str | None = None, session_id: int | None = None, context_id: int | None = None,
+                 minutes: int | None = None, task: str | None = None):
+    return contexts.file(preset, session_id, context_id, minutes, task)
+
+
+@app.get("/llm/status")
+def llm_status():
+    return llm.status()
+
+
 @app.get("/contexts/export")
 def context_export(format: str = "md", preset: str | None = None, session_id: int | None = None,
                    context_id: int | None = None, minutes: int | None = None, task: str | None = None):
@@ -756,6 +768,7 @@ def get_settings():
     for key in BOOL_KEYS:
         payload[key] = payload[key] == "1"
     payload["ai_api_key_set"] = bool(db.get_setting("ai_api_key", ""))
+    payload["ocr_available"] = shutil.which("tesseract") is not None
     payload["home"] = str(db.home())
     payload["capture"] = capture.status()
     return payload

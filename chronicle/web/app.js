@@ -295,10 +295,14 @@ function ctxGraphSession() {
   return ctxScope().session_id || "";
 }
 
-function ctxExport(extra = {}) {
+function ctxParams(extra = {}) {
   const ctx = state.ctx;
   const base = ctx.kind === "saved" ? { context_id: ctx.id } : ctx.kind === "session" ? { session_id: ctx.id } : {};
-  return media(`/contexts/export${qs({ ...base, ...extra })}`);
+  return { ...base, ...extra };
+}
+
+function ctxExport(extra = {}) {
+  return media(`/contexts/export${qs(ctxParams(extra))}`);
 }
 
 async function loadContext() {
@@ -349,6 +353,7 @@ async function loadView(view) {
   }
   if (view === "settings") {
     state.ai = await api("/ai/status");
+    state.llm = await api("/llm/status");
     state.settings = await api("/settings");
   }
   state.health = await api("/health");
@@ -773,7 +778,7 @@ function ctxFilesHtml() {
   const preview = ctx.preview
     ? section(
         `Preview · ${presetTitle(ctx.preview.preset)}`,
-        `<p class="meta">${ctx.preview.text.length.toLocaleString()} characters · about ${Math.round(ctx.preview.text.length / 4).toLocaleString()} tokens</p><pre class="doc">${esc(ctx.preview.text)}</pre>`,
+        `<p class="meta">${ctx.preview.text.length.toLocaleString()} characters · about ${Math.round(ctx.preview.text.length / 4).toLocaleString()} tokens · ${writerLine(ctx.preview)}</p><pre class="doc">${esc(ctx.preview.text)}</pre>`,
         '<button class="btn sm" type="button" data-act="ctx-copy">Copy</button>',
       )
     : "";
@@ -786,6 +791,13 @@ function ctxFilesHtml() {
     ${preview}
     ${section("Graph exports", `<p class="muted">The full knowledge graph for this scope, for graph databases and RAG pipelines.</p><div class="actions">${graphFiles}</div>`)}
   </div>`;
+}
+
+function writerLine(preview) {
+  if (preview.writtenBy) return `written by ${esc(preview.writtenBy)}`;
+  if (preview.saved) return "saved file";
+  const why = preview.note ? `: ${esc(preview.note)}` : ". Turn on LLM refinement in Settings to have a model write it";
+  return `built from the recording without a model${why}`;
 }
 
 function ctxMeetingsHtml() {
@@ -1129,6 +1141,28 @@ function toggle(name, label, on) {
   return `<label class="check"><input type="checkbox" name="${name}" ${on ? "checked" : ""} /> ${esc(label)}</label>`;
 }
 
+function llmSection() {
+  const llm = state.llm || {};
+  const choice = llm.locked_by_env ? llm.choice : (state.settings?.llm_provider || "auto");
+  const option = (value, label) => `<option value="${value}" ${choice === value ? "selected" : ""}>${label}</option>`;
+  const now = llm.enabled
+    ? `On: ${esc(llm.model)} refines each recording's graph when it ends and writes its context files.`
+    : llm.key_set
+      ? "Off. Context files are built from the recording without a model."
+      : "Off: no OpenAI key. Add OPENAI_API_KEY to .env, or save an OpenAI key under Model for Ask and pipes.";
+  return section(
+    "LLM refinement",
+    `<p class="muted">${now}</p>
+    <form class="inline" data-form="llm">
+      <select name="llm_provider" ${llm.locked_by_env ? "disabled" : ""}>${option("auto", "Automatic (on when a key is set)")}${option("openai", "OpenAI")}${option("off", "Off")}</select>
+      <input name="llm_model" placeholder="gpt-4.1-mini" value="${esc(state.settings?.llm_model || "")}" />
+      <button class="btn" type="submit" ${llm.locked_by_env ? "disabled" : ""}>Save</button>
+    </form>
+    ${llm.locked_by_env ? '<p class="faint">Set by CHRONICLE_LLM in the environment.</p>' : ""}
+    ${llm.last_error ? `<p class="faint">Last error: ${esc(llm.last_error)}</p>` : ""}`,
+  );
+}
+
 function settingsHtml() {
   const s = state.settings || {};
   const ai = state.ai || {};
@@ -1140,7 +1174,7 @@ function settingsHtml() {
           <label class="field">Seconds between samples <input name="capture_interval_secs" type="number" min="1" max="600" value="${esc(s.capture_interval_secs)}" /></label>
           <label class="field">Idle after (seconds) <input name="idle_threshold_secs" type="number" min="15" value="${esc(s.idle_threshold_secs)}" /></label>
         </div>
-        <div class="checks">${toggle("capture_screenshots", "Screenshots", s.capture_screenshots)}${toggle("capture_ocr", "OCR when tesseract is installed", s.capture_ocr)}${toggle("capture_clipboard", "Clipboard changes", s.capture_clipboard)}${toggle("redact", "Redact emails and secrets", s.redact)}</div>
+        <div class="checks">${toggle("capture_screenshots", "Screenshots", s.capture_screenshots)}${toggle("capture_ocr", s.ocr_available ? "OCR when accessibility text is missing" : "OCR (needs tesseract: brew install tesseract)", s.capture_ocr)}${toggle("capture_clipboard", "Clipboard changes", s.capture_clipboard)}${toggle("redact", "Redact emails and secrets", s.redact)}</div>
         <div class="actions"><button class="btn primary" type="submit">Save capture settings</button></div>
       </form>`,
     )}
@@ -1149,6 +1183,7 @@ function settingsHtml() {
       `<form class="inline" data-form="retention"><input name="days" class="narrow" type="number" min="0" value="${esc(s.retention_days)}" /><button class="btn" type="submit">Keep this many days</button></form>
       <p class="faint">0 keeps everything. A shorter window deletes older frames now.</p>`,
     )}
+    ${llmSection()}
     ${section(
       "Model for Ask and pipes",
       `<p class="muted">${ai.configured ? `Using ${esc(ai.model)} at ${esc(ai.base_url)}.` : "Answers come from local history. Add any OpenAI-compatible endpoint (OpenAI, OpenRouter, Ollama, LM Studio) to write them with a model."}</p>
@@ -1415,8 +1450,9 @@ const actions = {
     if (ctx.preview?.preset === preset) {
       ctx.preview = null;
     } else {
-      const text = await api(ctxExport({ preset }), { raw: true });
-      ctx.preview = { preset, text };
+      toast(state.llm?.enabled === false ? "Building context" : "Writing context with the model…");
+      const found = await api(`/contexts/file${qs(ctxParams({ preset }))}`);
+      ctx.preview = { preset, text: found.markdown, writtenBy: found.written_by, note: found.writer_note, saved: found.saved };
     }
     paintView();
   },
@@ -1654,6 +1690,14 @@ const forms = {
     state.pipes = await api("/pipes");
     paintView();
     toast("Pipe installed");
+  },
+  async llm(form) {
+    const data = new FormData(form);
+    const payload = { llm_provider: String(data.get("llm_provider") || "auto"), llm_model: String(data.get("llm_model") || "").trim() };
+    state.settings = await api("/settings", { method: "POST", body: JSON.stringify(payload) });
+    state.llm = await api("/llm/status");
+    paint();
+    toast(state.llm.enabled ? `LLM refinement on (${state.llm.model})` : "LLM refinement off");
   },
   async "capture-settings"(form) {
     const data = new FormData(form);
