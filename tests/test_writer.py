@@ -101,3 +101,62 @@ def test_writer_falls_back_without_a_model(client, writer):
     client.post(f"/sessions/{empty['id']}/stop")
     found = contexts.file("general", session_id=empty["id"])
     assert found["written_by"] is None and found["writer_note"] == "nothing was recorded in this scope" and not fake.calls
+
+
+def _billing_429(attempts: list):
+    import io
+    import urllib.error
+
+    body = b'{"error": {"type": "insufficient_quota", "code": "credit_balance_exhausted", "message": "You have no credits remaining."}}'
+
+    def urlopen(request, timeout):
+        attempts.append(request)
+        raise urllib.error.HTTPError(request.full_url, 429, "Too Many Requests", {}, io.BytesIO(body))
+
+    return urlopen, body
+
+
+def test_billing_errors_fail_fast_over_http(monkeypatch):
+    import sys
+
+    monkeypatch.setitem(sys.modules, "openai", None)
+    attempts: list = []
+    urlopen, _ = _billing_429(attempts)
+    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    provider = llm.OpenAIProvider(api_key="sk-test", base_url="https://example.test/v1")
+    with pytest.raises(llm.LLMError) as caught:
+        provider.complete("system", "user")
+    assert caught.value.message == llm.NO_CREDITS and not caught.value.retryable and len(attempts) == 1
+
+
+def test_billing_errors_fail_fast_with_sdk(monkeypatch):
+    pytest.importorskip("openai")
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    hits: list = []
+    _, body = _billing_429([])
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            self.rfile.read(int(self.headers["Content-Length"]))
+            hits.append(self.path)
+            self.send_response(429)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        provider = llm.OpenAIProvider(api_key="sk-test", base_url=f"http://127.0.0.1:{server.server_port}/v1")
+        with pytest.raises(llm.LLMError) as caught:
+            provider.complete("system", "user")
+    finally:
+        server.shutdown()
+    assert caught.value.message == llm.NO_CREDITS and len(hits) == 1

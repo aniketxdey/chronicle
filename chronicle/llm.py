@@ -22,6 +22,15 @@ DEFAULT_MODEL = "gpt-4.1-mini"
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
 TIMEOUT_SECS = 60.0
 OFF = {"", "0", "off", "none", "false", "no"}
+ATTEMPTS = 3
+# 429s that retrying can't fix.
+BILLING_CODES = ("insufficient_quota", "credit_balance_exhausted", "billing_hard_limit_reached", "billing_not_active")
+NO_CREDITS = "the OpenAI account has no credits left; add them at https://platform.openai.com/settings/organization/billing"
+
+
+def _billing(*parts) -> bool:
+    text = " ".join(str(part) for part in parts if part)
+    return any(code in text for code in BILLING_CODES)
 
 
 class LLMError(Exception):
@@ -176,22 +185,32 @@ class OpenAIProvider:
             calls.append({"name": item.get("name"), "arguments": arguments})
         return calls
 
-    def _sdk(self, openai, body: dict) -> dict:
-        client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url, timeout=self.timeout, max_retries=3)
-        try:
-            return client.responses.create(**body).model_dump()
-        except openai.RateLimitError as exc:
-            raise LLMError(f"rate limited: {exc}", retryable=True) from exc
-        except openai.APITimeoutError as exc:
-            raise LLMError("request timed out", retryable=True) from exc
-        except openai.APIConnectionError as exc:
-            raise LLMError(f"connection failed: {exc}", retryable=True) from exc
-        except openai.APIStatusError as exc:
-            raise LLMError(f"HTTP {exc.status_code}: {exc.message}", retryable=exc.status_code >= 500) from exc
-        except openai.OpenAIError as exc:
-            raise LLMError(str(exc)) from exc
+    def _sdk(self, openai, body: dict, attempts: int = ATTEMPTS) -> dict:
+        # The SDK's own retries would also retry billing 429s, so retries happen here.
+        client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url, timeout=self.timeout, max_retries=0)
+        for attempt in range(attempts):
+            try:
+                return client.responses.create(**body).model_dump()
+            except openai.RateLimitError as exc:
+                if _billing(getattr(exc, "code", None), exc):
+                    raise LLMError(NO_CREDITS) from exc
+                error = LLMError(f"rate limited: {exc}", retryable=True)
+            except openai.APITimeoutError:
+                error = LLMError("request timed out", retryable=True)
+            except openai.APIConnectionError as exc:
+                error = LLMError(f"connection failed: {exc}", retryable=True)
+            except openai.APIStatusError as exc:
+                if exc.status_code < 500:
+                    raise LLMError(f"HTTP {exc.status_code}: {exc.message}") from exc
+                error = LLMError(f"HTTP {exc.status_code}: {exc.message}", retryable=True)
+            except openai.OpenAIError as exc:
+                raise LLMError(str(exc)) from exc
+            if attempt == attempts - 1:
+                raise error
+            time.sleep(min(2.0 ** attempt, 20))
+        raise LLMError("unreachable")
 
-    def _http(self, body: dict, attempts: int = 3) -> dict:
+    def _http(self, body: dict, attempts: int = ATTEMPTS) -> dict:
         data = json.dumps(body).encode()
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
         for attempt in range(attempts):
@@ -200,9 +219,11 @@ class OpenAIProvider:
                 with urllib.request.urlopen(request, timeout=self.timeout) as response:
                     return json.loads(response.read().decode())
             except urllib.error.HTTPError as exc:
+                detail = exc.read().decode(errors="replace")[:300]
+                if exc.code == 429 and _billing(detail):
+                    raise LLMError(NO_CREDITS) from exc
                 retryable = exc.code == 429 or exc.code >= 500
                 if not retryable or attempt == attempts - 1:
-                    detail = exc.read().decode(errors="replace")[:300]
                     raise LLMError(f"HTTP {exc.code}: {detail}", retryable=retryable) from exc
                 wait = exc.headers.get("Retry-After") if exc.headers else None
                 time.sleep(min(float(wait) if wait and wait.replace(".", "", 1).isdigit() else 2.0 ** attempt, 20))
