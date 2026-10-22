@@ -32,7 +32,7 @@ chronicle = "chronicle.cli:main"
 packages = ["chronicle"]
 
 [tool.setuptools.package-data]
-chronicle = ["web/*"]
+chronicle = ["web/*", "helpers/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
