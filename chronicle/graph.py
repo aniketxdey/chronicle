@@ -11,7 +11,7 @@ import re
 from datetime import datetime
 from urllib.parse import urlsplit
 
-from chronicle import db
+from chronicle import db, merge
 from chronicle.timeutil import utc_iso
 
 EVIDENCE_CAP = 8
@@ -172,135 +172,9 @@ def _session_bounds(connection, session_id: int) -> tuple[str, str]:
 
 def build(session_id: int | None = None) -> dict:
     scope = scope_for(session_id)
-    graph = _Builder(scope)
     with db.conn() as connection:
-        people = _people_index(connection)
-        graph.people = people
-        if session_id:
-            start, end = _session_bounds(connection, session_id)
-            frames = connection.execute(
-                "SELECT * FROM frames WHERE session_id = ? ORDER BY timestamp, id", (session_id,)
-            ).fetchall()
-            events = connection.execute(
-                "SELECT * FROM ui_events WHERE session_id = ? ORDER BY timestamp, id", (session_id,)
-            ).fetchall()
-            window = ("t.timestamp >= ? AND t.timestamp <= ?", (start, end))
-            meetings = connection.execute(
-                "SELECT * FROM meetings WHERE started_at <= ? AND ended_at >= ?", (end, start)
-            ).fetchall()
-        else:
-            frames = connection.execute("SELECT * FROM frames ORDER BY timestamp, id").fetchall()
-            events = connection.execute("SELECT * FROM ui_events ORDER BY timestamp, id").fetchall()
-            window = ("1=1", ())
-            meetings = connection.execute("SELECT * FROM meetings").fetchall()
-        audio = connection.execute(
-            f"""
-            SELECT t.id, t.transcription, t.timestamp, s.name AS speaker_name, c.meeting_id
-            FROM audio_transcriptions t
-            LEFT JOIN speakers s ON s.id = t.speaker_id
-            LEFT JOIN audio_chunks c ON c.id = t.chunk_id
-            WHERE {window[0]}
-            ORDER BY t.timestamp
-            """,
-            window[1],
-        ).fetchall()
-        frame_tags: dict[int, list[str]] = {}
-        audio_tags: dict[int, list[str]] = {}
-        for row in connection.execute("SELECT content_type, content_id, tag FROM tags"):
-            if row["content_type"] == "frame":
-                frame_tags.setdefault(row["content_id"], []).append(row["tag"])
-            elif row["content_type"] == "audio":
-                audio_tags.setdefault(row["content_id"], []).append(row["tag"])
-
-        session_node = None
-        if session_id:
-            label_row = connection.execute("SELECT label FROM sessions WHERE id = ?", (session_id,)).fetchone()
-            session_node = graph.node("session", str(session_id), (label_row["label"] if label_row else None) or f"Recording {session_id}")
-
-        previous_app = None
-        previous_window = None
-        for frame in frames:
-            ref = {"type": "frame", "id": frame["id"], "timestamp": frame["timestamp"]}
-            seconds = frame["duration_secs"] or 0
-            app_name = frame["app_name"] or "Unknown"
-            app_id = graph.node("app", app_name, app_name, ref=ref, seconds=seconds)
-            window_title = frame["window_name"] or "(untitled)"
-            window_id = graph.node(
-                "window", f"{app_name}|{window_title}", window_title, ref=ref, seconds=seconds, props={"app": app_name}
-            )
-            graph.edge(app_id, window_id, "has_window", ref=ref)
-            if session_node:
-                graph.edge(session_node, app_id, "captured", ref=ref, weight=max(seconds, 1))
-            if previous_app and previous_app != app_id:
-                graph.edge(previous_app, app_id, "switched_to", ref=ref)
-            if previous_window and previous_window != window_id:
-                graph.edge(previous_window, window_id, "then", ref=ref)
-            previous_app, previous_window = app_id, window_id
-
-            entities: list[str] = []
-            site = _site(frame["browser_url"])
-            if site:
-                host, page = site
-                site_id = graph.node("site", host, host, ref=ref, seconds=seconds)
-                page_id = graph.node("page", page, window_title if window_title != "(untitled)" else page, ref=ref, seconds=seconds, props={"url": frame["browser_url"]})
-                graph.edge(page_id, site_id, "on_site", ref=ref)
-                graph.edge(window_id, page_id, "visited", ref=ref)
-                entities.append(page_id)
-            text = f"{window_title}\n{frame['browser_url'] or ''}\n{frame['full_text'] or ''}"
-            for kind, key, label in extract(text, people)[:ENTITY_CAP]:
-                entity_id = graph.node(kind, key, label, ref=ref, seconds=seconds)
-                graph.edge(window_id, entity_id, "shows", ref=ref)
-                entities.append(entity_id)
-            for tag in frame_tags.get(frame["id"], []):
-                entity_id = _tag_node(graph, tag, ref, seconds)
-                graph.edge(window_id, entity_id, "about", ref=ref)
-                entities.append(entity_id)
-            _co_occur(graph, entities, ref)
-
-        for event in events:
-            ref = {"type": "event", "id": event["id"], "timestamp": event["timestamp"], "event": event["event_type"]}
-            if not event["app_name"]:
-                continue
-            app_id = graph.node("app", event["app_name"], event["app_name"], ref=ref)
-            graph.nodes[app_id]["weight"] -= 1
-            graph.nodes[app_id]["props"].setdefault("events", {})
-            counts = graph.nodes[app_id]["props"]["events"]
-            counts[event["event_type"]] = counts.get(event["event_type"], 0) + 1
-            if event["event_type"] in {"clipboard", "text", "typing"} and event["text"]:
-                for kind, key, label in extract(event["text"], people)[:6]:
-                    entity_id = graph.node(kind, key, label, ref=ref)
-                    graph.edge(app_id, entity_id, "copied" if event["event_type"] == "clipboard" else "typed", ref=ref)
-
-        meeting_ids: dict[int, str] = {}
-        for meeting in meetings:
-            ref = {"type": "meeting", "id": meeting["id"], "timestamp": meeting["started_at"]}
-            start = datetime.fromisoformat(meeting["started_at"])
-            stop = datetime.fromisoformat(meeting["ended_at"])
-            meeting_ids[meeting["id"]] = graph.node(
-                "meeting", str(meeting["id"]), meeting["title"] or f"Meeting {meeting['id']}", ref=ref,
-                seconds=max(0.0, (stop - start).total_seconds()), props={"app": meeting["app_name"]},
-            )
-            if session_node:
-                graph.edge(session_node, meeting_ids[meeting["id"]], "captured", ref=ref)
-
-        for line in audio:
-            ref = {"type": "audio", "id": line["id"], "timestamp": line["timestamp"]}
-            meeting_node = meeting_ids.get(line["meeting_id"]) if line["meeting_id"] else None
-            entities = []
-            if line["speaker_name"]:
-                person_id = graph.node("person", line["speaker_name"], line["speaker_name"], ref=ref)
-                entities.append(person_id)
-                if meeting_node:
-                    graph.edge(person_id, meeting_node, "spoke_in", ref=ref)
-            for kind, key, label in extract(line["transcription"], people)[:ENTITY_CAP]:
-                entity_id = graph.node(kind, key, label, ref=ref)
-                if meeting_node:
-                    graph.edge(meeting_node, entity_id, "discussed", ref=ref)
-                entities.append(entity_id)
-            for tag in audio_tags.get(line["id"], []):
-                entities.append(_tag_node(graph, tag, ref, 0))
-            _co_occur(graph, entities, ref)
-
+        graph = _assemble(connection, session_id)
+        absorbed = merge.apply(graph.nodes, graph.edges, merge.plan(graph.nodes), EVIDENCE_CAP) if merge.enabled() else 0
         connection.execute("DELETE FROM kg_nodes WHERE scope = ?", (scope,))
         connection.execute("DELETE FROM kg_edges WHERE scope = ?", (scope,))
         connection.executemany(
@@ -325,7 +199,152 @@ def build(session_id: int | None = None) -> dict:
             ],
         )
     db.set_setting(f"graph_built_at:{scope}", utc_iso())
-    return {"scope": scope, "nodes": len(graph.nodes), "edges": len(graph.edges), "built_at": utc_iso()}
+    return {"scope": scope, "nodes": len(graph.nodes), "edges": len(graph.edges), "merged": absorbed, "built_at": utc_iso()}
+
+
+def merges(session_id: int | None = None, threshold: float | None = None) -> dict:
+    """The merge plan for a scope, computed from a fresh unmerged build without storing anything."""
+    with db.conn() as connection:
+        graph = _assemble(connection, session_id)
+    threshold = merge.THRESHOLD if threshold is None else threshold
+    clusters = merge.plan(graph.nodes, threshold=threshold)
+    return {
+        "scope": scope_for(session_id), "backend": merge.BACKEND, "threshold": threshold, "enabled": merge.enabled(),
+        "nodes": len(graph.nodes), "clusters": clusters,
+    }
+
+
+def _assemble(connection, session_id: int | None) -> _Builder:
+    graph = _Builder(scope_for(session_id))
+    people = _people_index(connection)
+    graph.people = people
+    if session_id:
+        start, end = _session_bounds(connection, session_id)
+        frames = connection.execute(
+            "SELECT * FROM frames WHERE session_id = ? ORDER BY timestamp, id", (session_id,)
+        ).fetchall()
+        events = connection.execute(
+            "SELECT * FROM ui_events WHERE session_id = ? ORDER BY timestamp, id", (session_id,)
+        ).fetchall()
+        window = ("t.timestamp >= ? AND t.timestamp <= ?", (start, end))
+        meetings = connection.execute(
+            "SELECT * FROM meetings WHERE started_at <= ? AND ended_at >= ?", (end, start)
+        ).fetchall()
+    else:
+        frames = connection.execute("SELECT * FROM frames ORDER BY timestamp, id").fetchall()
+        events = connection.execute("SELECT * FROM ui_events ORDER BY timestamp, id").fetchall()
+        window = ("1=1", ())
+        meetings = connection.execute("SELECT * FROM meetings").fetchall()
+    audio = connection.execute(
+        f"""
+        SELECT t.id, t.transcription, t.timestamp, s.name AS speaker_name, c.meeting_id
+        FROM audio_transcriptions t
+        LEFT JOIN speakers s ON s.id = t.speaker_id
+        LEFT JOIN audio_chunks c ON c.id = t.chunk_id
+        WHERE {window[0]}
+        ORDER BY t.timestamp
+        """,
+        window[1],
+    ).fetchall()
+    frame_tags: dict[int, list[str]] = {}
+    audio_tags: dict[int, list[str]] = {}
+    for row in connection.execute("SELECT content_type, content_id, tag FROM tags"):
+        if row["content_type"] == "frame":
+            frame_tags.setdefault(row["content_id"], []).append(row["tag"])
+        elif row["content_type"] == "audio":
+            audio_tags.setdefault(row["content_id"], []).append(row["tag"])
+
+    session_node = None
+    if session_id:
+        label_row = connection.execute("SELECT label FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        session_node = graph.node("session", str(session_id), (label_row["label"] if label_row else None) or f"Recording {session_id}")
+
+    previous_app = None
+    previous_window = None
+    for frame in frames:
+        ref = {"type": "frame", "id": frame["id"], "timestamp": frame["timestamp"]}
+        seconds = frame["duration_secs"] or 0
+        app_name = frame["app_name"] or "Unknown"
+        app_id = graph.node("app", app_name, app_name, ref=ref, seconds=seconds)
+        window_title = frame["window_name"] or "(untitled)"
+        window_id = graph.node(
+            "window", f"{app_name}|{window_title}", window_title, ref=ref, seconds=seconds, props={"app": app_name}
+        )
+        if frame["browser_url"]:
+            graph.nodes[window_id]["props"].setdefault("url", frame["browser_url"])
+        graph.edge(app_id, window_id, "has_window", ref=ref)
+        if session_node:
+            graph.edge(session_node, app_id, "captured", ref=ref, weight=max(seconds, 1))
+        if previous_app and previous_app != app_id:
+            graph.edge(previous_app, app_id, "switched_to", ref=ref)
+        if previous_window and previous_window != window_id:
+            graph.edge(previous_window, window_id, "then", ref=ref)
+        previous_app, previous_window = app_id, window_id
+
+        entities: list[str] = []
+        site = _site(frame["browser_url"])
+        if site:
+            host, page = site
+            site_id = graph.node("site", host, host, ref=ref, seconds=seconds)
+            page_id = graph.node("page", page, window_title if window_title != "(untitled)" else page, ref=ref, seconds=seconds, props={"url": frame["browser_url"]})
+            graph.edge(page_id, site_id, "on_site", ref=ref)
+            graph.edge(window_id, page_id, "visited", ref=ref)
+            entities.append(page_id)
+        text = f"{window_title}\n{frame['browser_url'] or ''}\n{frame['full_text'] or ''}"
+        for kind, key, label in extract(text, people)[:ENTITY_CAP]:
+            entity_id = graph.node(kind, key, label, ref=ref, seconds=seconds)
+            graph.edge(window_id, entity_id, "shows", ref=ref)
+            entities.append(entity_id)
+        for tag in frame_tags.get(frame["id"], []):
+            entity_id = _tag_node(graph, tag, ref, seconds)
+            graph.edge(window_id, entity_id, "about", ref=ref)
+            entities.append(entity_id)
+        _co_occur(graph, entities, ref)
+
+    for event in events:
+        ref = {"type": "event", "id": event["id"], "timestamp": event["timestamp"], "event": event["event_type"]}
+        if not event["app_name"]:
+            continue
+        app_id = graph.node("app", event["app_name"], event["app_name"], ref=ref)
+        graph.nodes[app_id]["weight"] -= 1
+        graph.nodes[app_id]["props"].setdefault("events", {})
+        counts = graph.nodes[app_id]["props"]["events"]
+        counts[event["event_type"]] = counts.get(event["event_type"], 0) + 1
+        if event["event_type"] in {"clipboard", "text", "typing"} and event["text"]:
+            for kind, key, label in extract(event["text"], people)[:6]:
+                entity_id = graph.node(kind, key, label, ref=ref)
+                graph.edge(app_id, entity_id, "copied" if event["event_type"] == "clipboard" else "typed", ref=ref)
+
+    meeting_ids: dict[int, str] = {}
+    for meeting in meetings:
+        ref = {"type": "meeting", "id": meeting["id"], "timestamp": meeting["started_at"]}
+        start = datetime.fromisoformat(meeting["started_at"])
+        stop = datetime.fromisoformat(meeting["ended_at"])
+        meeting_ids[meeting["id"]] = graph.node(
+            "meeting", str(meeting["id"]), meeting["title"] or f"Meeting {meeting['id']}", ref=ref,
+            seconds=max(0.0, (stop - start).total_seconds()), props={"app": meeting["app_name"]},
+        )
+        if session_node:
+            graph.edge(session_node, meeting_ids[meeting["id"]], "captured", ref=ref)
+
+    for line in audio:
+        ref = {"type": "audio", "id": line["id"], "timestamp": line["timestamp"]}
+        meeting_node = meeting_ids.get(line["meeting_id"]) if line["meeting_id"] else None
+        entities = []
+        if line["speaker_name"]:
+            person_id = graph.node("person", line["speaker_name"], line["speaker_name"], ref=ref)
+            entities.append(person_id)
+            if meeting_node:
+                graph.edge(person_id, meeting_node, "spoke_in", ref=ref)
+        for kind, key, label in extract(line["transcription"], people)[:ENTITY_CAP]:
+            entity_id = graph.node(kind, key, label, ref=ref)
+            if meeting_node:
+                graph.edge(meeting_node, entity_id, "discussed", ref=ref)
+            entities.append(entity_id)
+        for tag in audio_tags.get(line["id"], []):
+            entities.append(_tag_node(graph, tag, ref, 0))
+        _co_occur(graph, entities, ref)
+    return graph
 
 
 def _tag_node(graph: _Builder, tag: str, ref: dict, seconds: float) -> str:
@@ -462,6 +481,16 @@ def node(node_id: str, session_id: int | None = None, limit: int = 25) -> dict:
                 "SELECT * FROM kg_nodes WHERE scope = ? AND lower(label) = lower(?) ORDER BY weight DESC LIMIT 1",
                 (scope, node_id),
             ).fetchone()
+            if fallback is None:
+                fallback = next(
+                    (
+                        item for item in connection.execute(
+                            "SELECT * FROM kg_nodes WHERE scope = ? AND props LIKE ?", (scope, f'%"merged"%{json.dumps(node_id)}%')
+                        )
+                        if node_id in json.loads(item["props"] or "{}").get("merged", [])
+                    ),
+                    None,
+                )
             if fallback is None:
                 raise db.ChronicleError(f"no graph node {node_id!r} in {scope}", 404)
             row = fallback
