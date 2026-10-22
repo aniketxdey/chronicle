@@ -30,6 +30,7 @@ const KIND_COLORS = {
   window: "#6d6a60",
   site: "#4aa3df",
   page: "#7fb8e0",
+  query: "#e8c547",
   person: "#f2a65a",
   project: "#b48ef0",
   customer: "#e07a9a",

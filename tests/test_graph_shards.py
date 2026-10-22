@@ -79,9 +79,12 @@ def test_aggregation_matches_unsharded_build_without_decay(fresh):
     assert set(agg_nodes) == set(raw_nodes)
     for node_id, raw in raw_nodes.items():
         agg = agg_nodes[node_id]
-        assert (agg["kind"], agg["weight"], agg["first_seen"], agg["last_seen"]) == (raw["kind"], raw["weight"], raw["first_seen"], raw["last_seen"]), node_id
+        assert (agg["kind"], agg["first_seen"], agg["last_seen"]) == (raw["kind"], raw["first_seen"], raw["last_seen"]), node_id
         assert agg["seconds"] == pytest.approx(raw["seconds"], abs=0.5)
         assert agg["eff_weight"] == pytest.approx(agg["weight"])
+        # Keyphrase scores are relative to each shard's corpus, so scored weights differ from one global build.
+        if agg["kind"] not in {"topic", "query"}:
+            assert agg["weight"] == raw["weight"], node_id
     assert set(agg_edges) <= set(raw_edges)
     # The unsharded build links the last window of one recording to the first of the next; shards do not.
     boundaries = len(shards) + 1
@@ -159,7 +162,7 @@ def test_live_session_refreshes_incrementally(fresh):
     live = sessions.start("30m", label="live")
     start = datetime.fromisoformat(live["started_at"])
     _frames(start, 7, 5, live["id"])
-    first = graph.refresh(live["id"])
+    first = graph.refresh(live["id"], incremental=True)
     assert first["incremental"] is False and first["frames"] == 4  # newest frame is held back
     _frames(start + timedelta(minutes=5), 7, 3, live["id"])
     extended = content.add_screen(text="PR #7 needs review, see export_rows", app_name="Slack", window_name="#billing",
@@ -167,9 +170,9 @@ def test_live_session_refreshes_incrementally(fresh):
     assert extended["deduped"]
     content.add_screen(text="tests/test_export_7.py passed", app_name="Terminal", window_name="pytest",
                        timestamp=utc_iso(start + timedelta(minutes=7)), duration_secs=30, session_id=live["id"])
-    second = graph.refresh(live["id"])
+    second = graph.refresh(live["id"], incremental=True)
     assert second["incremental"] is True and second["frames"] == 4
-    assert graph.refresh(live["id"])["frames"] == 0
+    assert graph.refresh(live["id"], incremental=True)["frames"] == 0
     assert any(item["id"] == "ticket:eng-7" for item in graph.find("ENG-7"))
 
     incremental_nodes, incremental_edges = _rows(f"session:{live['id']}")

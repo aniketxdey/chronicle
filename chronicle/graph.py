@@ -21,12 +21,12 @@ import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
-from chronicle import db
+from chronicle import db, keyphrases
 from chronicle.timeutil import utc_iso
 
 EVIDENCE_CAP = 8
 ENTITY_CAP = 14
-GRAPH_VERSION = 1
+GRAPH_VERSION = 2
 HALF_LIFE_HOURS = 72.0
 REAGGREGATE_SECS = 600
 _NO_DECAY = {"0", "off", "none", "never", "inf", "infinity"}
@@ -45,8 +45,8 @@ _TOKEN = re.compile(r"[A-Za-z0-9_.#/-]{2,}")
 
 TAG_KINDS = {"person": "person", "project": "project", "customer": "customer"}
 KIND_ORDER = [
-    "app", "window", "site", "page", "person", "project", "customer", "ticket", "pr",
-    "file", "identifier", "meeting", "topic", "session",
+    "app", "window", "site", "page", "query", "topic", "person", "project", "customer", "ticket", "pr",
+    "file", "identifier", "meeting", "session",
 ]
 
 
@@ -204,6 +204,10 @@ def _tags(connection, content_type: str, ids: list[int]) -> dict[int, list[str]]
 def _extract(graph: _Builder, connection, frames, events, meetings, audio, session_node: str | None, state: dict) -> dict:
     """Fold raw rows into ``graph``. ``state`` carries the previous app/window across incremental passes."""
     people = graph.people
+    corpus = keyphrases.Corpus(exclude={*people, *(frame["app_name"] or "" for frame in frames)})
+    for frame in frames:
+        corpus.add(frame["id"], frame["window_name"], frame["full_text"], frame["browser_url"], frame["duration_secs"] or 0)
+    corpus.rank()
     frame_tags = _tags(connection, "frame", [frame["id"] for frame in frames])
     audio_tags = _tags(connection, "audio", [line["id"] for line in audio])
     previous_app, previous_window = state.get("app"), state.get("window")
@@ -234,6 +238,20 @@ def _extract(graph: _Builder, connection, frames, events, meetings, audio, sessi
             graph.edge(page_id, site_id, "on_site", ref=ref)
             graph.edge(window_id, page_id, "visited", ref=ref)
             entities.append(page_id)
+        searched = corpus.query(frame["id"])
+        query_id, query_topics = None, []
+        if searched:
+            engine, query = searched
+            query_id = graph.node("query", query.lower(), query, ref=ref, seconds=seconds, props={"engine": engine})
+            graph.edge(page_id if site else window_id, query_id, "searched", ref=ref)
+            query_topics = corpus.query_topics(query)
+            entities.append(query_id)
+        for topic_key in dict.fromkeys([*query_topics, *(key for key, _, _ in corpus.topics(frame["id"]))]):
+            topic_id = graph.node("topic", topic_key, corpus.labels[topic_key], ref=ref, seconds=seconds)
+            graph.edge(window_id, topic_id, "shows", ref=ref)
+            if query_id and topic_key in query_topics:
+                graph.edge(query_id, topic_id, "about", ref=ref)
+            entities.append(topic_id)
         text = f"{window_title}\n{frame['browser_url'] or ''}\n{frame['full_text'] or ''}"
         for kind, key, label in extract(text, people)[:ENTITY_CAP]:
             entity_id = graph.node(kind, key, label, ref=ref, seconds=seconds)
@@ -288,7 +306,25 @@ def _extract(graph: _Builder, connection, frames, events, meetings, audio, sessi
         for tag in audio_tags.get(line["id"], []):
             entities.append(_tag_node(graph, tag, ref, 0))
         _co_occur(graph, entities, ref)
+    _apply_scores(graph, corpus)
     return {"app": previous_app, "window": previous_window}
+
+
+def _apply_scores(graph: _Builder, corpus: keyphrases.Corpus) -> None:
+    """Keyphrase scores (0-1, shard max = 1) go into props and scale weight; a query scores as its best topic."""
+    for key, score in corpus.scores.items():
+        item = graph.nodes.get(f"topic:{_slug(key)}")
+        if item is not None:
+            item["props"]["score"] = score
+            item["weight"] = round(item["weight"] * (1 + score), 2)
+    for (src, dst, rel) in graph.edges:
+        if rel == "about" and src.startswith("query:") and dst in graph.nodes:
+            props = graph.nodes[src]["props"]
+            props["score"] = max(props.get("score", 0), graph.nodes[dst]["props"].get("score", 0))
+    for item in graph.nodes.values():
+        if item["kind"] == "query":
+            item["props"].setdefault("score", keyphrases.MIN_SCORE)
+            item["weight"] = round(item["weight"] * (1 + item["props"]["score"]), 2)
 
 
 def _tag_node(graph: _Builder, tag: str, ref: dict, seconds: float) -> str:
@@ -535,11 +571,17 @@ def _raw_marks(connection) -> dict:
     return {key: row[key] or 0 for key in row.keys()}
 
 
-def refresh(session_id: int) -> dict:
-    """Fold rows recorded since the last pass into a session's shard without re-reading older frames."""
+def refresh(session_id: int, incremental: bool | None = None) -> dict:
+    """Bring a live session's shard up to date.
+
+    Keyphrases, tasks and merges are scored over the whole session, so by default a refresh re-extracts
+    the session; ``CHRONICLE_GRAPH_INCREMENTAL=1`` folds in only new rows instead (cheaper, cruder).
+    """
+    if incremental is None:
+        incremental = os.environ.get("CHRONICLE_GRAPH_INCREMENTAL") == "1"
     try:
         with db.conn() as connection:
-            return _session_pass(connection, session_id, incremental=True)
+            return _session_pass(connection, session_id, incremental=incremental)
     except _Raced:
         return {"scope": scope_for(session_id), "incremental": True, "frames": 0, "raced": True}
 
@@ -847,7 +889,10 @@ def ensure(session_id: int | None = None) -> None:
 
 def _rank(scope: str, alias: str = "") -> str:
     p = f"{alias}." if alias else ""
-    return f"{p}eff_weight DESC, {p}seconds DESC" if scope == "all" else f"{p}seconds DESC, {p}weight DESC"
+    if scope == "all":
+        return f"{p}eff_weight DESC, {p}seconds DESC"
+    # A keyphrase score of 1 counts like a minute on screen, so scored topics compete with long-viewed windows.
+    return f"({p}seconds + 60 * COALESCE(json_extract({p}props, '$.score'), 0)) DESC, {p}weight DESC"
 
 
 def _edge_rank(scope: str, alias: str = "") -> str:
@@ -891,7 +936,9 @@ def summary(session_id: int | None = None, top: int = 8) -> dict:
                 (scope, row["kind"], top),
             ).fetchall()
             tops[row["kind"]] = [
-                {"id": item["id"], "label": item["label"], "weight": item["weight"], "effective_weight": _effective(item, scale), "seconds": item["seconds"]}
+                {"id": item["id"], "label": item["label"], "weight": item["weight"], "effective_weight": _effective(item, scale),
+                 "seconds": item["seconds"],
+                 **({"score": score} if (score := json.loads(item["props"] or "{}").get("score")) is not None else {})}
                 for item in found
             ]
         transitions = connection.execute(
