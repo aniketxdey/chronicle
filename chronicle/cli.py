@@ -56,6 +56,10 @@ def main(argv: list[str] | None = None) -> None:
     export = graph_sub.add_parser("export")
     export.add_argument("--session", type=int)
     export.add_argument("--limit", type=int, default=500)
+    merges = graph_sub.add_parser("merges", help="show which near-duplicate nodes the build merges, with scores")
+    merges.add_argument("--session", type=int)
+    merges.add_argument("--threshold", type=float)
+    merges.add_argument("--json", action="store_true")
 
     ctx = sub.add_parser("context", help="print the context pack an agent would receive")
     ctx.add_argument("task", nargs="?")
@@ -181,6 +185,19 @@ def _dispatch(args) -> None:
                 print(f"{item['id']:<48} {item['kind']:<10} {int(item['seconds']):>6}s  {item['label']}")
         elif args.graph_command == "node":
             _print(graph.node(args.id, session_id=session))
+        elif args.graph_command == "merges":
+            found = graph.merges(session, threshold=args.threshold)
+            if args.json:
+                _print(found)
+                return
+            absorbed = sum(len(cluster["members"]) for cluster in found["clusters"])
+            state = "" if found["enabled"] else ", disabled by CHRONICLE_MERGE=0"
+            print(f"Merges for {found['scope']} ({found['backend']}, threshold {found['threshold']}{state}): "
+                  f"{len(found['clusters'])} clusters, {absorbed} of {found['nodes']} nodes absorbed")
+            for cluster in found["clusters"]:
+                print(f"  {cluster['kind']:<8} {cluster['label']}  [{cluster['id']}]")
+                for member in cluster["members"]:
+                    print(f"    <- {member['score']:.2f} {member['reason']:<10} {member['kind']:<8} {member['label']}")
         else:
             _print(graph.export(session, limit=args.limit))
         return

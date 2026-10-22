@@ -107,13 +107,14 @@ def test_graph_builds_query_and_topic_nodes(client):
     query = client.get("/graph/node", params={"id": "query:top-50-startups-in-physical-ai-space", "session_id": session["id"]}).json()
     assert query["node"]["props"]["engine"] == "google"
     rels = {(item["rel"], item["direction"], item["id"]) for item in query["neighbors"]}
-    assert ("searched", "in", "page:google.com/search") in rels
+    assert ("searched", "in", "page:google.com/search?q=top-50-startups-in-physical-ai-space") in rels
     assert ("about", "out", "topic:physical-ai") in rels
 
     found = client.get("/graph/search", params={"q": "crusoe", "session_id": session["id"]}).json()["data"]
     assert found[0]["kind"] == "topic" and found[0]["label"].startswith("Crusoe")
     assert 0 < found[0]["props"]["score"] <= 1
-    assert "topic:crusoe-energy" in {item["id"] for item in found}
+    crusoe = next(item for item in found if item["id"] == "topic:crusoe")
+    assert "Crusoe Energy" in crusoe["props"].get("aliases", [])
 
     pack = client.get("/context", params={"session_id": session["id"], "task": "physical ai startups"}).json()
     assert "## Topics and searches" in pack["markdown"]

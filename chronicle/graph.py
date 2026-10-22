@@ -21,7 +21,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
-from chronicle import db, keyphrases
+from chronicle import db, keyphrases, merge
 from chronicle.timeutil import utc_iso
 
 EVIDENCE_CAP = 8
@@ -64,6 +64,7 @@ class _Builder:
         self.people: dict[str, tuple[str, str]] = {}
         self.nodes: dict[str, dict] = {}
         self.edges: dict[tuple[str, str, str], dict] = {}
+        self.merged = 0
 
     def node(self, kind: str, key: str, label: str, *, ref: dict | None = None, seconds: float = 0, props=None) -> str:
         node_id = f"{kind}:{_slug(key)}"
@@ -173,6 +174,9 @@ def _site(url: str | None) -> tuple[str, str] | None:
         return None
     host = parts.netloc.lower().removeprefix("www.")
     page = f"{host}{parts.path}".rstrip("/")
+    searched = keyphrases.search_query(url)
+    if searched:
+        page = f"{page}?q={searched[1].lower()}"
     return host, page
 
 
@@ -220,6 +224,8 @@ def _extract(graph: _Builder, connection, frames, events, meetings, audio, sessi
         window_id = graph.node(
             "window", f"{app_name}|{window_title}", window_title, ref=ref, seconds=seconds, props={"app": app_name}
         )
+        if frame["browser_url"]:
+            graph.nodes[window_id]["props"].setdefault("url", frame["browser_url"])
         graph.edge(app_id, window_id, "has_window", ref=ref)
         if session_node:
             graph.edge(session_node, app_id, "captured", ref=ref, weight=max(seconds, 1))
@@ -456,7 +462,29 @@ class _Raced(Exception):
     """Another process advanced the shard's watermark first; its pass already covered these rows."""
 
 
-def _session_pass(connection, session_id: int, *, incremental: bool) -> dict:
+def _finish(graph: _Builder) -> None:
+    """Whole-shard passes that need every frame at once; incremental passes skip them."""
+    if merge.enabled():
+        graph.merged = merge.apply(graph.nodes, graph.edges, merge.plan(graph.nodes), EVIDENCE_CAP)
+
+
+def merges(session_id: int | None = None, threshold: float | None = None) -> dict:
+    """The merge plan for a session (default: the latest), computed from a fresh unmerged extraction without storing anything."""
+    with db.conn() as connection:
+        if not session_id:
+            latest = connection.execute("SELECT MAX(id) AS id FROM sessions").fetchone()["id"]
+            if latest is None:
+                raise db.ChronicleError("no recordings yet", 404)
+            session_id = latest
+        graph = _session_pass(connection, session_id, incremental=False, dry=True)
+    threshold = merge.THRESHOLD if threshold is None else threshold
+    return {
+        "scope": scope_for(session_id), "backend": merge.BACKEND, "threshold": threshold, "enabled": merge.enabled(),
+        "nodes": len(graph.nodes), "clusters": merge.plan(graph.nodes, threshold=threshold),
+    }
+
+
+def _session_pass(connection, session_id: int, *, incremental: bool, dry: bool = False):
     row = connection.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
     if row is None:
         raise db.ChronicleError("session not found", 404)
@@ -493,6 +521,10 @@ def _session_pass(connection, session_id: int, *, incremental: bool) -> dict:
     if previous is None:
         session_node = graph.node("session", str(session_id), row["label"] or f"Recording {session_id}")
     state = _extract(graph, connection, frames, events, meetings, audio, session_node, marks.get("state") or {})
+    if dry:
+        return graph
+    if previous is None:
+        _finish(graph)
     advanced = {
         "frame": max([marks["frame"], *(f["id"] for f in frames)]),
         "event": max([marks["event"], *(e["id"] for e in events)]),
@@ -510,7 +542,7 @@ def _session_pass(connection, session_id: int, *, incremental: bool) -> dict:
     _save_shard(connection, scope, start, end, final=not live, marks=advanced)
     return {
         "scope": scope, "incremental": previous is not None, "frames": len(frames), "events": len(events),
-        "nodes": len(graph.nodes), "edges": len(graph.edges), "built_at": utc_iso(),
+        "nodes": len(graph.nodes), "edges": len(graph.edges), "merged": graph.merged, "built_at": utc_iso(),
     }
 
 
@@ -554,6 +586,7 @@ def _loose_pass(connection, hour: str, windows) -> dict:
     graph = _Builder(scope)
     graph.people = _people_index(connection)
     _extract(graph, connection, frames, events, meetings, audio, None, {})
+    _finish(graph)
     _write(connection, graph, replace=True)
     last = max([*(f["timestamp"] for f in frames), *(e["timestamp"] for e in events),
                 *(m["started_at"] for m in meetings), *(a["timestamp"] for a in audio)])
@@ -1021,6 +1054,16 @@ def node(node_id: str, session_id: int | None = None, limit: int = 25) -> dict:
                 f"SELECT * FROM kg_nodes WHERE scope = ? AND lower(label) = lower(?) ORDER BY {_rank(scope)} LIMIT 1",
                 (scope, node_id),
             ).fetchone()
+            if fallback is None:
+                fallback = next(
+                    (
+                        item for item in connection.execute(
+                            "SELECT * FROM kg_nodes WHERE scope = ? AND props LIKE ?", (scope, f'%"merged"%{json.dumps(node_id)}%')
+                        )
+                        if node_id in json.loads(item["props"] or "{}").get("merged", [])
+                    ),
+                    None,
+                )
             if fallback is None:
                 raise db.ChronicleError(f"no graph node {node_id!r} in {scope}", 404)
             row = fallback
