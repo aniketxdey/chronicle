@@ -158,6 +158,11 @@ def build(
             for row in events
         ],
         "transitions": summary["transitions"][:6],
+        "searches": [item["label"] for item in summary["top"].get("query", [])],
+        "topics": [
+            {"id": item["id"], "label": item["label"], "score": item.get("score", 0)}
+            for item in sorted(summary["top"].get("topic", []), key=lambda item: -item.get("score", 0))
+        ],
         "graph": {
             "scope": sub["scope"],
             "seeds": sub["seeds"],
@@ -216,6 +221,12 @@ def render(pack: dict, labels: dict | None = None) -> str:
         lines += ["", "## Habitual transitions"]
         for item in pack["transitions"]:
             lines.append(f"- {item['from']} → {item['to']} ({int(item['count'])}×)")
+    if pack.get("searches") or pack.get("topics"):
+        lines += ["", "## Topics and searches"]
+        if pack.get("searches"):
+            lines.append("Searched: " + "; ".join(f"“{query}”" for query in pack["searches"]))
+        if pack.get("topics"):
+            lines.append("Topics: " + ", ".join(f"{item['label']} ({item['score']:.2f})" for item in pack["topics"]))
     nodes = [n for n in pack["graph"]["nodes"] if n["kind"] not in {"window", "session"}]
     if nodes:
         lines += ["", f"## Knowledge graph ({pack['graph']['scope']})"]
