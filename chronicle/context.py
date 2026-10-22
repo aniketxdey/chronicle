@@ -174,6 +174,7 @@ def build(
             {"id": item["id"], "label": item["label"], "score": item.get("score", 0)}
             for item in sorted(summary["top"].get("topic", []), key=lambda item: -item.get("score", 0))
         ],
+        "llm": {"activities": summary["llm"]["activities"][:4], "relations": summary["llm"]["relations"][:12]},
         "graph": {
             "scope": sub["scope"],
             "seeds": sub["seeds"],
@@ -224,6 +225,16 @@ def render(pack: dict, labels: dict | None = None) -> str:
             lines.append(f"- Visible text: {now['text']}")
     else:
         lines += ["", "Nothing has been recorded yet. Start a recording with start_recording."]
+    tuned = pack.get("llm") or {}
+    if tuned.get("activities") or tuned.get("relations"):
+        lines += ["", "## What the user was doing (LLM-tuned graph)"]
+        for item in tuned.get("activities", []):
+            about = f" (involves {', '.join(item['nodes'][:4])})" if item["nodes"] else ""
+            lines.append(f"- {item['summary']}{about}")
+        if tuned.get("relations"):
+            lines.append("Typed relations:")
+            for item in tuned["relations"]:
+                lines.append(f"- {item['from']} —{item['rel']}→ {item['to']} (confidence {item['confidence']})")
     if pack["apps"]:
         lines += ["", "## Time by app"]
         lines.append(", ".join(f"{item['app']} {format_duration(item['seconds'])}" for item in pack["apps"]))
@@ -249,14 +260,14 @@ def render(pack: dict, labels: dict | None = None) -> str:
             lines.append("Searched: " + "; ".join(f"“{query}”" for query in pack["searches"]))
         if pack.get("topics"):
             lines.append("Topics: " + ", ".join(f"{item['label']} ({item['score']:.2f})" for item in pack["topics"]))
-    nodes = [n for n in pack["graph"]["nodes"] if n["kind"] not in {"window", "session"}]
+    nodes = [n for n in pack["graph"]["nodes"] if n["kind"] not in {"window", "session", "activity"}]
     if nodes:
         lines += ["", f"## Knowledge graph ({pack['graph']['scope']})"]
         for node in nodes:
             spent = f", {format_duration(node['seconds'])}" if node["seconds"] else ""
             refs = f", frames {', '.join(map(str, node['frames']))}" if node["frames"] else ""
             lines.append(f"- [{node['kind']}] {node['label']} (`{node['id']}`{spent}{refs})")
-        relations = [e for e in pack["graph"]["edges"] if e["rel"] not in {"has_window"}][:16]
+        relations = [e for e in pack["graph"]["edges"] if e["rel"] not in {"has_window", "involves"}][:16]
         if relations:
             lines.append("Relations:")
             for edge in relations:

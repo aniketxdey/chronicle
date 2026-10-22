@@ -77,7 +77,8 @@ def stop(session_id: int | None = None, status: str = "stopped") -> dict:
         row = connection.execute("SELECT * FROM sessions WHERE id = ?", (target,)).fetchone()
         if row is None:
             raise db.ChronicleError("session not found", 404)
-        if row["status"] == "recording":
+        finished = row["status"] == "recording"
+        if finished:
             ended = stamp
             if status == "complete" and row["ends_at"] and row["ends_at"] < stamp:
                 ended = row["ends_at"]
@@ -93,9 +94,11 @@ def stop(session_id: int | None = None, status: str = "stopped") -> dict:
                 "UPDATE sessions SET status = ?, stopped_at = ?, frames = ?, events = ? WHERE id = ?",
                 (status, ended, counts["f"], counts["e"], target),
             )
-    from chronicle import graph
+    from chronicle import graph, tuner
 
     graph.build(target)
+    if finished:
+        tuner.after_session(target)
     return get(target)
 
 
@@ -171,6 +174,8 @@ def delete(session_id: int) -> dict:
         connection.execute("DELETE FROM frames WHERE session_id = ?", (session_id,))
         connection.execute("DELETE FROM ui_events WHERE session_id = ?", (session_id,))
         graph.drop_shard(connection, graph.scope_for(session_id))
+        connection.execute("DELETE FROM kg_llm_patches WHERE scope = ?", (f"session:{session_id}",))
+        connection.execute("DELETE FROM settings WHERE key LIKE ?", (f"llm_tuned%:session:{session_id}",))
         connection.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
     for path in paths:
         if path:
