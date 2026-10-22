@@ -184,6 +184,25 @@ CREATE TABLE IF NOT EXISTS kg_edges (
     PRIMARY KEY (scope, src, dst, rel)
 );
 
+CREATE TABLE IF NOT EXISTS kg_shards (
+    scope TEXT PRIMARY KEY,
+    started_at TEXT,
+    ended_at TEXT,
+    version INTEGER NOT NULL,
+    final INTEGER NOT NULL DEFAULT 0,
+    marks TEXT,
+    factor REAL NOT NULL DEFAULT 1,
+    built_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS kg_dirty_nodes (id TEXT PRIMARY KEY) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS kg_dirty_edges (
+    src TEXT NOT NULL,
+    dst TEXT NOT NULL,
+    rel TEXT NOT NULL,
+    PRIMARY KEY (src, dst, rel)
+) WITHOUT ROWID;
+
 CREATE VIRTUAL TABLE IF NOT EXISTS frames_fts USING fts5(frame_id UNINDEXED, full_text);
 CREATE VIRTUAL TABLE IF NOT EXISTS audio_fts USING fts5(transcription_id UNINDEXED, transcription);
 CREATE VIRTUAL TABLE IF NOT EXISTS elements_fts USING fts5(element_id UNINDEXED, text);
@@ -195,11 +214,15 @@ CREATE INDEX IF NOT EXISTS idx_events_ts ON ui_events(timestamp);
 CREATE INDEX IF NOT EXISTS idx_tags_lookup ON tags(content_type, content_id);
 CREATE INDEX IF NOT EXISTS idx_kg_edges_src ON kg_edges(scope, src);
 CREATE INDEX IF NOT EXISTS idx_kg_edges_dst ON kg_edges(scope, dst);
+CREATE INDEX IF NOT EXISTS idx_kg_nodes_key ON kg_nodes(id);
+CREATE INDEX IF NOT EXISTS idx_kg_edges_key ON kg_edges(src, dst, rel);
 """
 
 MIGRATIONS = [
     ("frames", "session_id", "INTEGER"),
     ("ui_events", "session_id", "INTEGER"),
+    ("kg_nodes", "eff_weight", "REAL"),
+    ("kg_edges", "eff_weight", "REAL"),
 ]
 
 DEFAULTS = {

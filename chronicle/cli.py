@@ -43,6 +43,7 @@ def main(argv: list[str] | None = None) -> None:
     graph_sub = graph_parser.add_subparsers(dest="graph_command", required=True)
     build = graph_sub.add_parser("build")
     build.add_argument("--session", type=int)
+    build.add_argument("--full", action="store_true", help="re-extract every shard from raw history")
     show = graph_sub.add_parser("show")
     show.add_argument("--session", type=int)
     find = graph_sub.add_parser("find")
@@ -160,10 +161,14 @@ def _dispatch(args) -> None:
     if args.command == "graph":
         session = getattr(args, "session", None)
         if args.graph_command == "build":
-            _print(graph.build(session))
+            _print(graph.rebuild() if args.full and not session else graph.build(session))
         elif args.graph_command == "show":
             summary = graph.summary(session)
-            print(f"Graph {summary['scope']}: {sum(summary['counts'].values())} nodes, {summary['edges']} edges")
+            decay = ""
+            if "half_life_hours" in summary:
+                half = summary["half_life_hours"]
+                decay = f", ranked by weight decayed with a {half:g}h half-life" if half else ", no decay"
+            print(f"Graph {summary['scope']}: {sum(summary['counts'].values())} nodes, {summary['edges']} edges{decay}")
             for kind, count in summary["counts"].items():
                 names = ", ".join(item["label"] for item in summary["top"].get(kind, [])[:5])
                 print(f"  {kind:<11} {count:>4}  {names}")

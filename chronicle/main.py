@@ -49,7 +49,9 @@ async def _jobs(stop: asyncio.Event) -> None:
         try:
             for name in pipes.due_names():
                 await asyncio.to_thread(pipes.execute_sync, name)
-            await asyncio.to_thread(db.enforce_retention)
+            pruned = await asyncio.to_thread(db.enforce_retention)
+            if not pruned["skipped"] and (pruned["frames"] or pruned["audio"] or pruned["events"] or pruned["meetings"]):
+                await asyncio.to_thread(graph.forget, "0000", pruned["cutoff"])
         except Exception as exc:  # noqa: BLE001
             print(f"chronicle jobs: {exc}", file=sys.stderr)
         try:
@@ -166,6 +168,7 @@ class SettingsBody(BaseModel):
     capture_screenshots: bool | None = None
     capture_ocr: bool | None = None
     idle_threshold_secs: int | None = None
+    graph_half_life_hours: float | None = Field(default=None, ge=0, description="0 disables decay")
     ai_base_url: str | None = None
     ai_model: str | None = None
     ai_api_key: str | None = None
@@ -577,7 +580,7 @@ def delete_range(body: RangeBody):
         raise db.ChronicleError("end_time is before start_time")
     deleted = db.delete_range(start, end)
     workflows.refresh()
-    graph.build(None)
+    graph.forget(start, end)
     return deleted
 
 
@@ -663,7 +666,7 @@ def ai_status():
 
 SETTING_KEYS = [
     "onboarded", "timezone", "retention_days", "redact", "capture_interval_secs", "capture_clipboard",
-    "capture_screenshots", "capture_ocr", "idle_threshold_secs", "ai_base_url", "ai_model",
+    "capture_screenshots", "capture_ocr", "idle_threshold_secs", "graph_half_life_hours", "ai_base_url", "ai_model",
 ]
 BOOL_KEYS = {"onboarded", "redact", "capture_clipboard", "capture_screenshots", "capture_ocr"}
 

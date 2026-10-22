@@ -96,7 +96,6 @@ def stop(session_id: int | None = None, status: str = "stopped") -> dict:
     from chronicle import graph
 
     graph.build(target)
-    graph.build(None)
     return get(target)
 
 
@@ -153,6 +152,8 @@ def list_sessions(limit: int = 50) -> list[dict]:
 
 
 def delete(session_id: int) -> dict:
+    from chronicle import graph
+
     with db.conn() as connection:
         row = connection.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
         if row is None:
@@ -169,13 +170,10 @@ def delete(session_id: int) -> dict:
         connection.execute("DELETE FROM tags WHERE content_type = 'frame' AND content_id IN (SELECT id FROM frames WHERE session_id = ?)", (session_id,))
         connection.execute("DELETE FROM frames WHERE session_id = ?", (session_id,))
         connection.execute("DELETE FROM ui_events WHERE session_id = ?", (session_id,))
-        connection.execute("DELETE FROM kg_nodes WHERE scope = ?", (f"session:{session_id}",))
-        connection.execute("DELETE FROM kg_edges WHERE scope = ?", (f"session:{session_id}",))
+        graph.drop_shard(connection, graph.scope_for(session_id))
         connection.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
     for path in paths:
         if path:
             (db.media_root() / path).unlink(missing_ok=True)
-    from chronicle import graph
-
-    graph.build(None)
+    graph.aggregate()
     return {"deleted": session_id, "frames": len(paths)}
