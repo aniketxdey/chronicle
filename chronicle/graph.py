@@ -11,7 +11,7 @@ import re
 from datetime import datetime
 from urllib.parse import urlsplit
 
-from chronicle import db
+from chronicle import db, keyphrases
 from chronicle.timeutil import utc_iso
 
 EVIDENCE_CAP = 8
@@ -31,9 +31,11 @@ _TOKEN = re.compile(r"[A-Za-z0-9_.#/-]{2,}")
 
 TAG_KINDS = {"person": "person", "project": "project", "customer": "customer"}
 KIND_ORDER = [
-    "app", "window", "site", "page", "person", "project", "customer", "ticket", "pr",
-    "file", "identifier", "meeting", "topic", "session",
+    "app", "window", "site", "page", "query", "topic", "person", "project", "customer", "ticket", "pr",
+    "file", "identifier", "meeting", "session",
 ]
+# Keyphrase score (0-1) counts like a minute of dwell, so scored topics compete with long-viewed windows.
+RANK = "(seconds + 60 * COALESCE(json_extract(props, '$.score'), 0)) DESC, weight DESC"
 
 
 def scope_for(session_id: int | None) -> str:
@@ -217,6 +219,11 @@ def build(session_id: int | None = None) -> dict:
             label_row = connection.execute("SELECT label FROM sessions WHERE id = ?", (session_id,)).fetchone()
             session_node = graph.node("session", str(session_id), (label_row["label"] if label_row else None) or f"Recording {session_id}")
 
+        corpus = keyphrases.Corpus(exclude={*people, *(frame["app_name"] or "" for frame in frames)})
+        for frame in frames:
+            corpus.add(frame["id"], frame["window_name"], frame["full_text"], frame["browser_url"], frame["duration_secs"] or 0)
+        corpus.rank()
+
         previous_app = None
         previous_window = None
         for frame in frames:
@@ -246,6 +253,20 @@ def build(session_id: int | None = None) -> dict:
                 graph.edge(page_id, site_id, "on_site", ref=ref)
                 graph.edge(window_id, page_id, "visited", ref=ref)
                 entities.append(page_id)
+            searched = corpus.query(frame["id"])
+            query_id, query_topics = None, []
+            if searched:
+                engine, query = searched
+                query_id = graph.node("query", query.lower(), query, ref=ref, seconds=seconds, props={"engine": engine})
+                graph.edge(page_id if site else window_id, query_id, "searched", ref=ref)
+                query_topics = corpus.query_topics(query)
+                entities.append(query_id)
+            for topic_key in dict.fromkeys([*query_topics, *(key for key, _, _ in corpus.topics(frame["id"]))]):
+                topic_id = graph.node("topic", topic_key, corpus.labels[topic_key], ref=ref, seconds=seconds)
+                graph.edge(window_id, topic_id, "shows", ref=ref)
+                if query_id and topic_key in query_topics:
+                    graph.edge(query_id, topic_id, "about", ref=ref)
+                entities.append(topic_id)
             text = f"{window_title}\n{frame['browser_url'] or ''}\n{frame['full_text'] or ''}"
             for kind, key, label in extract(text, people)[:ENTITY_CAP]:
                 entity_id = graph.node(kind, key, label, ref=ref, seconds=seconds)
@@ -301,6 +322,7 @@ def build(session_id: int | None = None) -> dict:
                 entities.append(_tag_node(graph, tag, ref, 0))
             _co_occur(graph, entities, ref)
 
+        _apply_scores(graph, corpus)
         connection.execute("DELETE FROM kg_nodes WHERE scope = ?", (scope,))
         connection.execute("DELETE FROM kg_edges WHERE scope = ?", (scope,))
         connection.executemany(
@@ -326,6 +348,23 @@ def build(session_id: int | None = None) -> dict:
         )
     db.set_setting(f"graph_built_at:{scope}", utc_iso())
     return {"scope": scope, "nodes": len(graph.nodes), "edges": len(graph.edges), "built_at": utc_iso()}
+
+
+def _apply_scores(graph: _Builder, corpus: keyphrases.Corpus) -> None:
+    """Keyphrase scores (0-1, scope max = 1) go into props and scale weight; a query scores as its best topic."""
+    for key, score in corpus.scores.items():
+        item = graph.nodes.get(f"topic:{_slug(key)}")
+        if item is not None:
+            item["props"]["score"] = score
+            item["weight"] = round(item["weight"] * (1 + score), 2)
+    for (src, dst, rel) in graph.edges:
+        if rel == "about" and src.startswith("query:") and dst in graph.nodes:
+            props = graph.nodes[src]["props"]
+            props["score"] = max(props.get("score", 0), graph.nodes[dst]["props"].get("score", 0))
+    for item in graph.nodes.values():
+        if item["kind"] == "query":
+            item["props"].setdefault("score", keyphrases.MIN_SCORE)
+            item["weight"] = round(item["weight"] * (1 + item["props"]["score"]), 2)
 
 
 def _tag_node(graph: _Builder, tag: str, ref: dict, seconds: float) -> str:
@@ -381,13 +420,14 @@ def summary(session_id: int | None = None, top: int = 8) -> dict:
         tops: dict[str, list[dict]] = {}
         for row in kinds:
             found = connection.execute(
-                """
-                SELECT * FROM kg_nodes WHERE scope = ? AND kind = ?
-                ORDER BY seconds DESC, weight DESC LIMIT ?
-                """,
+                f"SELECT * FROM kg_nodes WHERE scope = ? AND kind = ? ORDER BY json_extract(props, '$.score') DESC, {RANK} LIMIT ?",
                 (scope, row["kind"], top),
             ).fetchall()
-            tops[row["kind"]] = [{"id": item["id"], "label": item["label"], "weight": item["weight"], "seconds": item["seconds"]} for item in found]
+            tops[row["kind"]] = [
+                {"id": item["id"], "label": item["label"], "weight": item["weight"], "seconds": item["seconds"],
+                 **({"score": score} if (score := json.loads(item["props"] or "{}").get("score")) is not None else {})}
+                for item in found
+            ]
         transitions = connection.execute(
             """
             SELECT e.*, s.label AS src_label, d.label AS dst_label, s.props AS src_props, d.props AS dst_props
@@ -445,7 +485,7 @@ def find(q: str | None = None, kind: str | None = None, limit: int = 20, session
         params_score = []
     sql = f"""
         SELECT *, ({score}) AS hits FROM kg_nodes WHERE {' AND '.join(clauses)}
-        ORDER BY hits DESC, seconds DESC, weight DESC LIMIT ?
+        ORDER BY hits DESC, {RANK} LIMIT ?
     """
     with db.conn() as connection:
         rows = connection.execute(sql, [*params_score, *params, max(1, min(limit, 200))]).fetchall()
@@ -501,9 +541,9 @@ def subgraph(task: str | None, session_id: int | None = None, max_nodes: int = 3
     with db.conn() as connection:
         if not task:
             rows = connection.execute(
-                """
+                f"""
                 SELECT * FROM kg_nodes WHERE scope = ? AND kind NOT IN ('window', 'session')
-                ORDER BY seconds DESC, weight DESC LIMIT ?
+                ORDER BY {RANK} LIMIT ?
                 """,
                 (scope, max_nodes),
             ).fetchall()
@@ -542,7 +582,7 @@ def export(session_id: int | None = None, limit: int = 160) -> dict:
     scope = scope_for(session_id)
     with db.conn() as connection:
         rows = connection.execute(
-            "SELECT * FROM kg_nodes WHERE scope = ? ORDER BY seconds DESC, weight DESC LIMIT ?",
+            f"SELECT * FROM kg_nodes WHERE scope = ? ORDER BY {RANK} LIMIT ?",
             (scope, max(1, min(limit, 1000))),
         ).fetchall()
         ids = [row["id"] for row in rows]
