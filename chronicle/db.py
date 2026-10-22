@@ -181,7 +181,23 @@ CREATE TABLE IF NOT EXISTS kg_edges (
     first_seen TEXT,
     last_seen TEXT,
     evidence TEXT,
+    props TEXT,
     PRIMARY KEY (scope, src, dst, rel)
+);
+
+CREATE TABLE IF NOT EXISTS kg_llm_patches (
+    id INTEGER PRIMARY KEY,
+    scope TEXT NOT NULL,
+    op TEXT NOT NULL,
+    model TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS llm_cache (
+    key TEXT PRIMARY KEY,
+    model TEXT,
+    response TEXT NOT NULL,
+    created_at TEXT NOT NULL
 );
 
 CREATE VIRTUAL TABLE IF NOT EXISTS frames_fts USING fts5(frame_id UNINDEXED, full_text);
@@ -195,11 +211,13 @@ CREATE INDEX IF NOT EXISTS idx_events_ts ON ui_events(timestamp);
 CREATE INDEX IF NOT EXISTS idx_tags_lookup ON tags(content_type, content_id);
 CREATE INDEX IF NOT EXISTS idx_kg_edges_src ON kg_edges(scope, src);
 CREATE INDEX IF NOT EXISTS idx_kg_edges_dst ON kg_edges(scope, dst);
+CREATE INDEX IF NOT EXISTS idx_kg_llm_patches_scope ON kg_llm_patches(scope, id);
 """
 
 MIGRATIONS = [
     ("frames", "session_id", "INTEGER"),
     ("ui_events", "session_id", "INTEGER"),
+    ("kg_edges", "props", "TEXT"),
 ]
 
 DEFAULTS = {
@@ -216,6 +234,9 @@ DEFAULTS = {
     "ai_base_url": "",
     "ai_model": "",
     "ai_api_key": "",
+    "llm_provider": "",
+    "llm_model": "",
+    "last_llm_error": "",
     "last_capture_error": "",
     "last_capture_at": "",
 }

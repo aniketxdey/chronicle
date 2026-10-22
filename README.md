@@ -92,6 +92,7 @@ The `chronicle mcp config <client>` snippets for providers are starting points. 
 | `get_frame` | One frame with nearby events and audio; `include_image=true` attaches the screenshot |
 | `start_recording` / `stop_recording` / `list_sessions` | Record a demonstration for a preset duration, from the agent itself |
 | `rebuild_graph`, `activity_summary`, `list_meetings` | Maintenance and summaries |
+| `tune_graph` | Optional LLM pass that patches the graph with entities, typed relations, and activity summaries (see below) |
 | `search` / `fetch` | ChatGPT connector and deep-research compatible |
 
 Resources: `chronicle://context/current`, `chronicle://graph/summary`, `chronicle://sessions`, and the templates `chronicle://context/session/{id}` and `chronicle://frame/{id}`.
@@ -113,6 +114,7 @@ chronicle serve [--host --port]          web UI + REST API + HTTP MCP
 chronicle record <duration> [--label --interval --detach]
 chronicle stop [id] · chronicle sessions
 chronicle graph build|show|find|node|export [--session N]
+chronicle graph tune [--session N --rounds 2 --force --reset]
 chronicle context [task] [--minutes N --session N --json]
 chronicle mcp [stdio|clients|config <client>|install <client> [--path --dry-run]]
 chronicle search <q> · chronicle ask <question> · chronicle status · chronicle doctor · chronicle demo
@@ -129,8 +131,39 @@ The REST API is documented at `http://127.0.0.1:3030/docs`. Highlights: `POST /s
 | `CHRONICLE_PUBLIC_URL` | `http://127.0.0.1:3030` | Base URL used in links and remote client snippets |
 | `CHRONICLE_DEMO=1` | off | Load the sample workday into an empty database on start |
 | `CHRONICLE_DISABLE_CAPTURE=1` | off | Never record from this process |
+| `CHRONICLE_LLM` | unset (off) | `openai` turns on LLM graph tuning |
+| `CHRONICLE_LLM_MODEL` | `gpt-4.1-mini` | Model used for tuning |
+| `OPENAI_API_KEY` / `OPENAI_BASE_URL` | unset / OpenAI | Credentials and endpoint for the `openai` provider |
 
 Capture interval, idle threshold, screenshots, OCR, clipboard, redaction, and retention are set in the UI (Settings) or through `POST /settings`.
+
+## LLM graph tuning (optional)
+
+The heuristic graph knows apps, windows, pages, tickets, files, and identifiers. It does not know that "Crusoe" is a company on the Forbes AI 50 list. An optional LLM pass fixes that. It reads the graph and its evidence (window titles, URLs with their search query, redacted OCR snippets, dwell seconds) and replies with patch operations through strict function calls: `add_entity`, `retype_node`, `rename_node`, `merge_nodes`, `add_relation` (`is_a`, `part_of`, `works_on`, `competes_with`, `located_in`, `researching`, `mentions`, `listed_in`, `uses`, `related_to`), `add_trait`, `set_activity`, and `drop_node`.
+
+It is off by default, and Chronicle runs fully offline without it. To turn it on:
+
+```bash
+uv pip install -e ".[llm]"          # openai SDK + python-dotenv; both optional, urllib is the fallback
+cat >> .env <<'EOF'
+CHRONICLE_LLM=openai
+OPENAI_API_KEY=sk-...
+# CHRONICLE_LLM_MODEL=gpt-4.1-mini   # default
+# OPENAI_BASE_URL=https://api.openai.com/v1
+EOF
+chronicle graph tune --session 1    # or wait: every recording is tuned in the background when it ends
+chronicle graph show --session 1    # activities and typed relations are listed first
+```
+
+`.env` is read from `CHRONICLE_HOME` and from the current directory, and it never overrides variables that are already set. `CHRONICLE_LLM` and `CHRONICLE_LLM_MODEL` can also be stored as the `llm_provider` and `llm_model` settings (`POST /settings`).
+
+How it behaves:
+- Each run makes up to `--rounds` passes (default 2) over batches of the heaviest nodes. A pass ends early when the model proposes nothing new. Every op is checked against the schema and against the node ids that exist at that point. Rejected ops are fed back to the model in the next round.
+- Accepted ops are stored in `kg_llm_patches` and replayed in order after every `graph build`, so tuning survives rebuilds. Session patches are also replayed into the `all` scope. `chronicle graph tune --reset` (or `tune_graph` with `reset=true`) removes them.
+- LLM-made nodes and edges carry `source: "llm"`, and relations carry a `confidence` and an evidence quote in `props`. `graph_summary` returns them under `llm`, and `get_context` shows activities first, then relations like `Crusoe —is_a→ company`.
+- Responses are cached by a content hash of the prompt and model. A scope whose graph has not changed since its last tune is skipped unless you pass `--force`.
+- Rate limits, timeouts, and API errors are retried, then reported in the result and in the `last_llm_error` setting. They never stop a recording.
+- Other providers plug in through `chronicle.llm.register(name, factory)`. A provider only needs `call_tools(system, user, tools) -> [{"name", "arguments"}]`.
 
 ## Development
 
@@ -141,7 +174,7 @@ python examples/stdio_client.py "finish the Acme export"
 npx @modelcontextprotocol/inspector --cli chronicle mcp --method tools/list
 ```
 
-Layout: `chronicle/probe.py` reads the machine, `capture.py` runs the recorder, and `sessions.py` manages timed recordings. `graph.py` builds the knowledge graph and `context.py` builds the context packs. `mcp_server.py` holds the JSON-RPC core and the stdio transport, `clients.py` holds per-client setup, `main.py` serves HTTP, and `web/` holds the UI.
+Layout: `chronicle/probe.py` reads the machine, `capture.py` runs the recorder, and `sessions.py` manages timed recordings. `graph.py` builds the knowledge graph, `tuner.py` runs the optional LLM patch pass over it through the providers in `llm.py`, and `context.py` builds the context packs. `mcp_server.py` holds the JSON-RPC core and the stdio transport, `clients.py` holds per-client setup, `main.py` serves HTTP, and `web/` holds the UI.
 
 ## License
 

@@ -7,6 +7,7 @@ os.environ["CHRONICLE_HOME"] = tempfile.mkdtemp(prefix="chronicle-test-")
 os.environ["CHRONICLE_DISABLE_JOBS"] = "1"
 os.environ["CHRONICLE_DISABLE_CAPTURE"] = "1"
 os.environ["CHRONICLE_DEMO"] = "1"
+os.environ["CHRONICLE_LLM"] = "off"
 os.environ.pop("CHRONICLE_TOKEN", None)
 
 import pytest  # noqa: E402

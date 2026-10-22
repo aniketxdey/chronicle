@@ -31,9 +31,11 @@ _TOKEN = re.compile(r"[A-Za-z0-9_.#/-]{2,}")
 
 TAG_KINDS = {"person": "person", "project": "project", "customer": "customer"}
 KIND_ORDER = [
-    "app", "window", "site", "page", "person", "project", "customer", "ticket", "pr",
-    "file", "identifier", "meeting", "topic", "session",
+    "activity", "app", "window", "site", "page", "person", "project", "customer", "company", "organization", "product",
+    "concept", "place", "event", "list", "document", "category", "ticket", "pr", "file", "identifier", "meeting", "topic",
+    "session",
 ]
+_LLM_TYPED = "json_extract(e.props, '$.source') = 'llm' AND json_extract(e.props, '$.auto') IS NULL"
 
 
 def scope_for(session_id: int | None) -> str:
@@ -44,6 +46,10 @@ def _slug(value: str) -> str:
     return re.sub(r"\s+", "-", (value or "").strip()).lower()
 
 
+def node_id(kind: str, key: str) -> str:
+    return f"{kind}:{_slug(key)}"
+
+
 class _Builder:
     def __init__(self, scope: str):
         self.scope = scope
@@ -52,19 +58,19 @@ class _Builder:
         self.edges: dict[tuple[str, str, str], dict] = {}
 
     def node(self, kind: str, key: str, label: str, *, ref: dict | None = None, seconds: float = 0, props=None) -> str:
-        node_id = f"{kind}:{_slug(key)}"
-        item = self.nodes.get(node_id)
+        ident = node_id(kind, key)
+        item = self.nodes.get(ident)
         if item is None:
             item = {
-                "id": node_id, "kind": kind, "label": label.strip()[:200] or key, "weight": 0.0,
+                "id": ident, "kind": kind, "label": label.strip()[:200] or key, "weight": 0.0,
                 "seconds": 0.0, "first_seen": None, "last_seen": None, "evidence": [], "props": dict(props or {}),
             }
-            self.nodes[node_id] = item
+            self.nodes[ident] = item
         item["weight"] += 1
         item["seconds"] += seconds or 0
         if ref:
             self._touch(item, ref)
-        return node_id
+        return ident
 
     def edge(self, src: str, dst: str, rel: str, *, ref: dict | None = None, weight: float = 1, undirected=False):
         if src == dst:
@@ -74,7 +80,7 @@ class _Builder:
         key = (src, dst, rel)
         item = self.edges.get(key)
         if item is None:
-            item = {"src": src, "dst": dst, "rel": rel, "weight": 0.0, "first_seen": None, "last_seen": None, "evidence": []}
+            item = {"src": src, "dst": dst, "rel": rel, "weight": 0.0, "first_seen": None, "last_seen": None, "evidence": [], "props": {}}
             self.edges[key] = item
         item["weight"] += weight
         if ref:
@@ -301,6 +307,9 @@ def build(session_id: int | None = None) -> dict:
                 entities.append(_tag_node(graph, tag, ref, 0))
             _co_occur(graph, entities, ref)
 
+        from chronicle import tuner
+
+        replayed = tuner.replay(connection, scope, graph.nodes, graph.edges)
         connection.execute("DELETE FROM kg_nodes WHERE scope = ?", (scope,))
         connection.execute("DELETE FROM kg_edges WHERE scope = ?", (scope,))
         connection.executemany(
@@ -316,16 +325,17 @@ def build(session_id: int | None = None) -> dict:
         )
         connection.executemany(
             """
-            INSERT INTO kg_edges(scope, src, dst, rel, weight, first_seen, last_seen, evidence)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO kg_edges(scope, src, dst, rel, weight, first_seen, last_seen, evidence, props)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
-                (scope, e["src"], e["dst"], e["rel"], round(e["weight"], 1), e["first_seen"], e["last_seen"], json.dumps(e["evidence"]))
+                (scope, e["src"], e["dst"], e["rel"], round(e["weight"], 1), e["first_seen"], e["last_seen"],
+                 json.dumps(e["evidence"]), json.dumps(e.get("props") or {}))
                 for e in graph.edges.values()
             ],
         )
     db.set_setting(f"graph_built_at:{scope}", utc_iso())
-    return {"scope": scope, "nodes": len(graph.nodes), "edges": len(graph.edges), "built_at": utc_iso()}
+    return {"scope": scope, "nodes": len(graph.nodes), "edges": len(graph.edges), "built_at": utc_iso(), "patches": replayed}
 
 
 def _tag_node(graph: _Builder, tag: str, ref: dict, seconds: float) -> str:
@@ -367,7 +377,57 @@ def _edge_public(row) -> dict:
     return {
         "src": row["src"], "dst": row["dst"], "rel": row["rel"], "weight": row["weight"],
         "first_seen": row["first_seen"], "last_seen": row["last_seen"],
-        "evidence": json.loads(row["evidence"] or "[]"),
+        "evidence": json.loads(row["evidence"] or "[]"), "props": json.loads(row["props"] or "{}"),
+    }
+
+
+def llm_view(connection, scope: str, top: int = 8) -> dict:
+    """LLM-tuned content of a scope: activity summaries, typed relations, and added entities."""
+    activities = connection.execute(
+        "SELECT * FROM kg_nodes WHERE scope = ? AND kind = 'activity' ORDER BY seconds DESC, weight DESC LIMIT ?", (scope, top)
+    ).fetchall()
+    involved: dict[str, list[str]] = {}
+    for row in connection.execute(
+        """
+        SELECT e.src, n.label FROM kg_edges e JOIN kg_nodes n ON n.scope = e.scope AND n.id = e.dst
+        WHERE e.scope = ? AND e.rel = 'involves' ORDER BY n.seconds DESC
+        """,
+        (scope,),
+    ):
+        involved.setdefault(row["src"], []).append(row["label"])
+    relations = connection.execute(
+        f"""
+        SELECT e.*, s.label AS src_label, d.label AS dst_label FROM kg_edges e
+        JOIN kg_nodes s ON s.scope = e.scope AND s.id = e.src
+        JOIN kg_nodes d ON d.scope = e.scope AND d.id = e.dst
+        WHERE e.scope = ? AND {_LLM_TYPED}
+        ORDER BY json_extract(e.props, '$.confidence') DESC, e.weight DESC, e.src LIMIT ?
+        """,
+        (scope, top * 3),
+    ).fetchall()
+    entities = connection.execute(
+        """
+        SELECT * FROM kg_nodes WHERE scope = ? AND json_extract(props, '$.source') = 'llm' AND kind NOT IN ('activity', 'category')
+        ORDER BY seconds DESC, weight DESC LIMIT ?
+        """,
+        (scope, top * 2),
+    ).fetchall()
+    if scope == "all":
+        count = connection.execute("SELECT COUNT(*) AS n FROM kg_llm_patches").fetchone()["n"]
+    else:
+        count = connection.execute("SELECT COUNT(*) AS n FROM kg_llm_patches WHERE scope = ?", (scope,)).fetchone()["n"]
+    return {
+        "patches": count,
+        "activities": [{"id": row["id"], "summary": row["label"], "nodes": involved.get(row["id"], [])[:6]} for row in activities],
+        "relations": [
+            {"src": row["src"], "rel": row["rel"], "dst": row["dst"], "from": row["src_label"], "to": row["dst_label"],
+             "confidence": json.loads(row["props"] or "{}").get("confidence")}
+            for row in relations
+        ],
+        "entities": [
+            {"id": row["id"], "kind": row["kind"], "label": row["label"], "traits": json.loads(row["props"] or "{}").get("traits", [])}
+            for row in entities
+        ],
     }
 
 
@@ -400,12 +460,14 @@ def summary(session_id: int | None = None, top: int = 8) -> dict:
             (scope, top * 2),
         ).fetchall()
         edge_count = connection.execute("SELECT COUNT(*) AS n FROM kg_edges WHERE scope = ?", (scope,)).fetchone()["n"]
+        tuned = llm_view(connection, scope, top)
     order = {kind: index for index, kind in enumerate(KIND_ORDER)}
     return {
         "scope": scope,
         "built_at": db.get_setting(f"graph_built_at:{scope}"),
         "counts": {row["kind"]: row["n"] for row in sorted(kinds, key=lambda r: order.get(r["kind"], 99))},
         "edges": edge_count,
+        "llm": tuned,
         "top": tops,
         "transitions": [
             {
