@@ -489,7 +489,7 @@ _threads: list[threading.Thread] = []
 
 
 def after_session(session_id: int) -> threading.Thread | None:
-    """Tune a finished recording in the background when a provider is configured. Never raises."""
+    """Tune a finished recording, then write its General context file, in the background. Never raises."""
     try:
         if not llm.enabled():
             return None
@@ -498,7 +498,11 @@ def after_session(session_id: int) -> threading.Thread | None:
 
     def run() -> None:
         try:
-            tune(session_id)
+            if tune(session_id).get("status") == "error":
+                return
+            from chronicle import contexts
+
+            contexts.build(preset_id="general", session_id=session_id)
         except Exception as exc:  # noqa: BLE001
             try:
                 db.set_setting("last_llm_error", f"{utc_iso()} session:{session_id}: {exc}")

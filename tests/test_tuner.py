@@ -34,6 +34,9 @@ class Fake:
             raise item
         return item
 
+    def complete(self, system, user, max_tokens=4000):
+        return "## Summary\nWritten by the fake model."
+
 
 def op(tool: str, /, **arguments) -> dict:
     return {"name": tool, "arguments": arguments}

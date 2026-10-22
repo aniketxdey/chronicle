@@ -124,7 +124,7 @@ Prompts: `use_my_computer_context(task)` and `learn_from_recording(session_id)`.
 - **Workflows**: repeated loops found in your recordings, and scheduled pipes.
 - **Integrations**: set up every MCP client, and export context files for everything else.
 
-The same data is on the REST API: `GET /overview`, `GET|POST /contexts`, `GET /contexts/detail`, `GET /contexts/search`, and `GET /contexts/export?format=md|json|graphml|cypher&preset=…`.
+The same data is on the REST API: `GET /overview`, `GET|POST /contexts`, `GET /contexts/detail`, `GET /contexts/search`, `GET /contexts/file?preset=…` (the file plus which model wrote it), and `GET /contexts/export?format=md|json|graphml|cypher&preset=…`.
 
 ## Teach an agent by showing it
 
@@ -160,39 +160,40 @@ The REST API is documented at `http://127.0.0.1:3030/docs`. Highlights: `POST /s
 | `CHRONICLE_DEMO=1` | off | Load the sample workday into an empty database on start |
 | `CHRONICLE_DISABLE_CAPTURE=1` | off | Never record from this process |
 | `CHRONICLE_HALF_LIFE_HOURS` | `72` | Half-life for ranking the all-history graph; `0` or `off` disables decay. The `graph_half_life_hours` setting overrides it |
-| `CHRONICLE_LLM` | unset (off) | `openai` turns on LLM graph tuning |
-| `CHRONICLE_LLM_MODEL` | `gpt-4.1-mini` | Model used for tuning |
+| `CHRONICLE_LLM` | unset (automatic) | `openai` or `off`. Unset means on whenever an OpenAI key is available |
+| `CHRONICLE_LLM_MODEL` | `gpt-4.1-mini` | Model used for graph tuning and context files |
 | `OPENAI_API_KEY` / `OPENAI_BASE_URL` | unset / OpenAI | Credentials and endpoint for the `openai` provider |
 
 Capture interval, idle threshold, screenshots, OCR, clipboard, redaction, and retention are set in the UI (Settings) or through `POST /settings`, which also accepts `graph_half_life_hours`.
 
-## LLM graph tuning (optional)
+## LLM refinement
 
 The heuristic graph knows apps, windows, pages, tickets, files, and identifiers. It does not know that "Crusoe" is a company on the Forbes AI 50 list. An optional LLM pass fixes that. It reads the graph and its evidence (window titles, URLs with their search query, redacted OCR snippets, dwell seconds) and replies with patch operations through strict function calls: `add_entity`, `retype_node`, `rename_node`, `merge_nodes`, `add_relation` (`is_a`, `part_of`, `works_on`, `competes_with`, `located_in`, `researching`, `mentions`, `listed_in`, `uses`, `related_to`), `add_trait`, `set_activity`, and `drop_node`.
 
-It is off by default, and Chronicle runs fully offline without it. To turn it on:
+The same model writes the workflow context files. For each preset (research, coding, job applications, and so on) it turns the recording's evidence into a document with the sections that workflow needs and an "Open threads" list, citing frames, and the evidence it was given is attached below. Files are cached by a content hash, so reopening one costs nothing.
+
+It is on whenever an OpenAI key is available: `OPENAI_API_KEY` in the environment or `.env`, or an OpenAI key saved under Settings > Model for Ask and pipes. Settings > LLM refinement switches it off, or set `CHRONICLE_LLM=off`. Without a key, Chronicle runs fully offline: the graph is heuristic and context files are built from the recording directly. To set it up:
 
 ```bash
 uv pip install -e ".[llm]"          # openai SDK + python-dotenv; both optional, urllib is the fallback
 cat >> .env <<'EOF'
-CHRONICLE_LLM=openai
 OPENAI_API_KEY=sk-...
 # CHRONICLE_LLM_MODEL=gpt-4.1-mini   # default
 # OPENAI_BASE_URL=https://api.openai.com/v1
 EOF
-chronicle graph tune --session 1    # or wait: every recording is tuned in the background when it ends
+chronicle graph tune --session 1    # or wait: every recording is tuned, and its General file written, when it ends
 chronicle graph show --session 1    # activities and typed relations are listed first
 ```
 
-`.env` is read from `CHRONICLE_HOME` and from the current directory, and it never overrides variables that are already set. `CHRONICLE_LLM` and `CHRONICLE_LLM_MODEL` can also be stored as the `llm_provider` and `llm_model` settings (`POST /settings`).
+`.env` is read from `CHRONICLE_HOME` and from the current directory, and it never overrides variables that are already set. `CHRONICLE_LLM` and `CHRONICLE_LLM_MODEL` can also be stored as the `llm_provider` (`auto`, `openai`, `off`) and `llm_model` settings (Settings, or `POST /settings`). `GET /llm/status` reports what is in use and the last error.
 
 How it behaves:
 - Each run makes up to `--rounds` passes (default 2) over batches of the heaviest nodes. A pass ends early when the model proposes nothing new. Every op is checked against the schema and against the node ids that exist at that point. Rejected ops are fed back to the model in the next round.
-- Accepted ops are stored in `kg_llm_patches` and replayed in order after every `graph build`, so tuning survives rebuilds. Session patches are also replayed into the `all` scope. `chronicle graph tune --reset` (or `tune_graph` with `reset=true`) removes them.
+- Accepted ops are stored in `kg_llm_patches` and replayed in order after every `graph build`, so tuning survives rebuilds. Session patches live in their session's shard, so the `all` scope picks them up when it aggregates; `all`-scope patches are applied on top. `chronicle graph tune --reset` (or `tune_graph` with `reset=true`) removes them.
 - LLM-made nodes and edges carry `source: "llm"`, and relations carry a `confidence` and an evidence quote in `props`. `graph_summary` returns them under `llm`, and `get_context` shows activities first, then relations like `Crusoe —is_a→ company`.
 - Responses are cached by a content hash of the prompt and model. A scope whose graph has not changed since its last tune is skipped unless you pass `--force`.
 - Rate limits, timeouts, and API errors are retried, then reported in the result and in the `last_llm_error` setting. They never stop a recording.
-- Other providers plug in through `chronicle.llm.register(name, factory)`. A provider only needs `call_tools(system, user, tools) -> [{"name", "arguments"}]`.
+- Other providers plug in through `chronicle.llm.register(name, factory)`. A provider needs `call_tools(system, user, tools) -> [{"name", "arguments"}]` and `complete(system, user) -> str`.
 
 ## Development
 

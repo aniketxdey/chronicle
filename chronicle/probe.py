@@ -53,7 +53,8 @@ class Front:
 
 def _run(args: list[str], timeout: float = 3, text: bool = True) -> subprocess.CompletedProcess | None:
     try:
-        return subprocess.run(args, check=False, capture_output=True, text=text, timeout=timeout)
+        # Tools like tesseract echo raw bytes (file names, image data) to stderr, which strict decoding rejects.
+        return subprocess.run(args, check=False, capture_output=True, text=text, errors="replace" if text else None, timeout=timeout)
     except (subprocess.TimeoutExpired, OSError):
         return None
 
@@ -236,10 +237,15 @@ def screenshot(target: Path, max_width: int = 1600) -> bool:
 def ocr(image: Path) -> str | None:
     if not shutil.which("tesseract"):
         return None
-    done = _run(["tesseract", str(image), "-", "--psm", "3"], timeout=30)
-    if done is None or done.returncode != 0:
+    # Piped, because Leptonica on macOS rewrites paths under /tmp and then can't find the file.
+    try:
+        done = subprocess.run(["tesseract", "stdin", "-", "--psm", "3"], input=image.read_bytes(),
+                              capture_output=True, check=False, timeout=30)
+    except (subprocess.TimeoutExpired, OSError):
         return None
-    lines = [" ".join(line.split()) for line in done.stdout.splitlines()]
+    if done.returncode != 0:
+        return None
+    lines = [" ".join(line.split()) for line in done.stdout.decode("utf-8", "replace").splitlines()]
     return "\n".join(line for line in lines if len(line) > 1)[:20000] or None
 
 

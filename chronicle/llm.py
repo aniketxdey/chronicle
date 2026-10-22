@@ -1,8 +1,11 @@
-"""Optional LLM providers. Off unless ``CHRONICLE_LLM`` (or the ``llm_provider`` setting) names one.
+"""LLM providers for graph tuning and context writing.
 
-A provider takes a system prompt, a user prompt, and neutral tool specs
+On by default when an OpenAI key is available (``OPENAI_API_KEY``, or an OpenAI key saved under
+Settings > Model). ``CHRONICLE_LLM`` or the ``llm_provider`` setting picks a provider; ``off`` disables it.
+
+``call_tools`` takes a system prompt, a user prompt, and neutral tool specs
 (``{"name", "description", "parameters"}``) and returns the tool calls the model
-made as ``[{"name": str, "arguments": dict}]``.
+made as ``[{"name": str, "arguments": dict}]``. ``complete`` returns plain text.
 """
 
 from __future__ import annotations
@@ -33,6 +36,8 @@ class Provider(Protocol):
     model: str
 
     def call_tools(self, system: str, user: str, tools: list[dict]) -> list[dict]: ...
+
+    def complete(self, system: str, user: str, max_tokens: int = 4000) -> str: ...
 
 
 _loaded_env = False
@@ -82,12 +87,29 @@ def _setting(key: str) -> str:
         return ""
 
 
+def _saved_openai() -> tuple[str, str]:
+    """The Settings > Model key and endpoint, when they point at OpenAI (tuning uses the Responses API)."""
+    base, key = _setting("ai_base_url").strip(), _setting("ai_api_key").strip()
+    if key and (not base or "api.openai.com" in base):
+        return key, base
+    return "", ""
+
+
+def api_key() -> str:
+    load_env()
+    return os.environ.get("OPENAI_API_KEY") or _saved_openai()[0]
+
+
 def configured_name() -> str:
+    """The provider in use: an explicit choice, else ``openai`` when a key is available, else ``off``."""
     load_env()
     name = os.environ.get("CHRONICLE_LLM")
     if name is None:
         name = _setting("llm_provider")
-    return name.strip().lower()
+    name = name.strip().lower()
+    if name in {"", "auto"}:
+        return "openai" if api_key() else "off"
+    return name
 
 
 def model_name() -> str:
@@ -122,13 +144,27 @@ class OpenAIProvider:
             "store": False,
         }
 
-    def call_tools(self, system: str, user: str, tools: list[dict]) -> list[dict]:
-        body = self._body(system, user, tools)
+    def _send(self, body: dict) -> dict:
         try:
             import openai
         except ImportError:
             openai = None
-        payload = self._sdk(openai, body) if openai is not None else self._http(body)
+        return self._sdk(openai, body) if openai is not None else self._http(body)
+
+    def complete(self, system: str, user: str, max_tokens: int = 4000) -> str:
+        payload = self._send({"model": self.model, "instructions": system, "input": user,
+                              "max_output_tokens": max_tokens, "store": False})
+        text = "".join(
+            part.get("text") or ""
+            for item in payload.get("output") or [] if item.get("type") == "message"
+            for part in item.get("content") or [] if part.get("type") == "output_text"
+        ).strip()
+        if not text:
+            raise LLMError("model returned no text")
+        return text
+
+    def call_tools(self, system: str, user: str, tools: list[dict]) -> list[dict]:
+        payload = self._send(self._body(system, user, tools))
         calls = []
         for item in payload.get("output") or []:
             if item.get("type") != "function_call":
@@ -179,9 +215,9 @@ class OpenAIProvider:
 
 def _openai() -> Provider:
     return OpenAIProvider(
-        api_key=os.environ.get("OPENAI_API_KEY", ""),
+        api_key=api_key(),
         model=model_name(),
-        base_url=os.environ.get("OPENAI_BASE_URL") or None,
+        base_url=os.environ.get("OPENAI_BASE_URL") or _saved_openai()[1] or None,
     )
 
 
@@ -214,3 +250,21 @@ def provider() -> Provider | None:
     if factory is None:
         raise LLMError(f"unknown LLM provider {name!r}; known: {', '.join(sorted(PROVIDERS))}")
     return factory()
+
+
+def status() -> dict:
+    """What the Settings page shows: whether LLM refinement is on, why, and the last failure."""
+    try:
+        name = configured_name()
+    except Exception:  # noqa: BLE001
+        name = "off"
+    on = enabled()
+    return {
+        "enabled": on,
+        "provider": (_override.name if _override is not None else name) if on else None,
+        "model": (_override.model if _override is not None else model_name()) if on else None,
+        "choice": (os.environ.get("CHRONICLE_LLM") or _setting("llm_provider") or "auto").strip().lower(),
+        "locked_by_env": os.environ.get("CHRONICLE_LLM") is not None,
+        "key_set": bool(api_key()),
+        "last_error": _setting("last_llm_error") or None,
+    }
