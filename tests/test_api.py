@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from chronicle import seed
 from chronicle.timeutil import parse_duration, utc_iso
 
 
@@ -92,7 +93,9 @@ def test_raw_sql_is_read_only(client):
 
 
 def test_timeline_and_activity(client):
-    assert len(client.get("/timeline").json()["blocks"]) >= 10
+    # Other tests add frames "now", which can fall on a later local day than the seeded workday.
+    seeded = client.get("/timeline", params={"date": seed._day().isoformat()}).json()
+    assert len(seeded["blocks"]) >= 10
     assert client.get("/activity-summary").json()["apps"]
 
 
@@ -100,7 +103,8 @@ def test_retention_deletes_old_rows(client):
     old = utc_iso(datetime.now(timezone.utc) - timedelta(days=5))
     client.post("/add", json={"text": "dropme-token should disappear", "app_name": "Notes", "timestamp": old})
     assert client.get("/search", params={"q": "dropme-token"}).json()["pagination"]["total"] == 1
-    client.post("/retention/configure", json={"days": 1})
+    # The seeded workday can be up to ~42h old; a 1-day window would delete it for later tests.
+    client.post("/retention/configure", json={"days": 3})
     assert client.get("/search", params={"q": "dropme-token"}).json()["pagination"]["total"] == 0
     client.post("/settings", json={"retention_days": 30})
 
