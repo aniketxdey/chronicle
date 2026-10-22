@@ -60,7 +60,9 @@ def _rows(scope: str) -> tuple[dict, dict]:
     return nodes, edges
 
 
-def test_aggregation_matches_unsharded_build_without_decay(fresh):
+def test_aggregation_matches_unsharded_build_without_decay(fresh, monkeypatch):
+    # The unsharded reference build has no merge pass.
+    monkeypatch.setenv("CHRONICLE_MERGE", "0")
     _no_decay()
     shards = [_session(n, timedelta(days=n)) for n in range(1, 6)]
     loose = datetime.now(timezone.utc).replace(minute=50, second=0, microsecond=0) - timedelta(days=8)
