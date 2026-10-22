@@ -31,7 +31,7 @@ INSTRUCTIONS = (
     "for a preset amount of time, then get_context(session_id=...) to learn from it."
 )
 
-KINDS = ["app", "window", "site", "page", "person", "project", "customer", "ticket", "pr", "file", "identifier", "meeting", "topic", "session"]
+KINDS = ["app", "window", "site", "page", "query", "person", "project", "customer", "ticket", "pr", "file", "identifier", "meeting", "topic", "session"]
 
 
 def _schema(properties: dict, required: list[str] | None = None) -> dict:
