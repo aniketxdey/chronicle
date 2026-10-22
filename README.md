@@ -51,7 +51,7 @@ These need [uv](https://docs.astral.sh/uv/) on the `PATH`. Each one runs `uvx ch
 
 ### Manual setup
 
-`chronicle mcp clients` lists every supported client, and `chronicle mcp config <client>` prints the snippet to paste. `chronicle mcp install <client>` merges it into the client's config file and keeps a `.chronicle-backup` copy of the old one. The **Connect** page in the UI does the same.
+`chronicle mcp clients` lists every supported client, and `chronicle mcp config <client>` prints the snippet to paste. `chronicle mcp install <client>` merges it into the client's config file and keeps a `.chronicle-backup` copy of the old one. The **Integrations** page in the UI does the same, and also exports context as Markdown, JSON, GraphML, or Cypher for platforms that take files instead of MCP (ChatGPT and Claude Projects, NotebookLM, Neo4j, RAG pipelines).
 
 #### Local agents (stdio)
 
@@ -112,6 +112,18 @@ The `chronicle mcp config <client>` snippets for providers are starting points. 
 
 Resources: `chronicle://context/current`, `chronicle://graph/summary`, `chronicle://sessions`, and the templates `chronicle://context/session/{id}` and `chronicle://frame/{id}`.
 Prompts: `use_my_computer_context(task)` and `learn_from_recording(session_id)`. The second turns a recorded demonstration into steps an agent can repeat.
+
+## The app
+
+`chronicle serve` opens the UI at `http://127.0.0.1:3030`:
+
+- **Home**: the last five recordings with their top apps, tasks, and topics, time per app over the last week, and every recording one click away.
+- **Record**: start a timed recording and see what this machine can capture.
+- **Contexts**: open any recording (or all history), or generate a new context from a task, a time range, or a recording. Each context has downloadable files tuned to a kind of work (data analysis, job applications, software, research, writing, meeting follow-up, customer work), meetings with notes, the knowledge graph, a timeline of frames and system events, and a search across all of them. Generated contexts are saved.
+- **Workflows**: repeated loops found in your recordings, and scheduled pipes.
+- **Integrations**: set up every MCP client, and export context files for everything else.
+
+The same data is on the REST API: `GET /overview`, `GET|POST /contexts`, `GET /contexts/detail`, `GET /contexts/search`, and `GET /contexts/export?format=md|json|graphml|cypher&preset=…`.
 
 ## Teach an agent by showing it
 

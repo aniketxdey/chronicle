@@ -203,6 +203,19 @@ CREATE TABLE IF NOT EXISTS kg_dirty_edges (
     PRIMARY KEY (src, dst, rel)
 ) WITHOUT ROWID;
 
+CREATE TABLE IF NOT EXISTS contexts (
+    id INTEGER PRIMARY KEY,
+    title TEXT NOT NULL,
+    task TEXT,
+    preset TEXT,
+    session_id INTEGER,
+    minutes INTEGER,
+    start_at TEXT,
+    end_at TEXT,
+    markdown TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS frames_fts USING fts5(frame_id UNINDEXED, full_text);
 CREATE VIRTUAL TABLE IF NOT EXISTS audio_fts USING fts5(transcription_id UNINDEXED, transcription);
 CREATE VIRTUAL TABLE IF NOT EXISTS elements_fts USING fts5(element_id UNINDEXED, text);

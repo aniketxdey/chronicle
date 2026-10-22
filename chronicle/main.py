@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from chronicle import __version__, capture, clients, content, context, db, graph, mcp_server, meetings, pipes, search, seed, sessions, workflows
+from chronicle import __version__, capture, clients, content, context, contexts, db, graph, mcp_server, meetings, pipes, search, seed, sessions, workflows
 from chronicle import ask as ask_mod
 from chronicle.timeutil import parse_time, utc_iso
 
@@ -205,6 +205,14 @@ class InstallBody(BaseModel):
     dry_run: bool = False
 
 
+class ContextBody(BaseModel):
+    task: str | None = None
+    preset: str | None = None
+    session_id: int | None = None
+    minutes: int | None = None
+    title: str | None = None
+
+
 def _parse(value: str | None) -> str | None:
     try:
         return parse_time(value, db.local_zone())
@@ -343,6 +351,55 @@ def get_context(task: str | None = None, minutes: int | None = None, session_id:
     if format == "markdown":
         return Response(pack["markdown"], media_type="text/markdown; charset=utf-8")
     return pack
+
+
+@app.get("/overview")
+def overview(days: int = 7):
+    return contexts.overview(max(1, min(days, 90)))
+
+
+@app.get("/contexts")
+def list_contexts(limit: int = 100):
+    return {"data": contexts.list_saved(limit), "presets": contexts.presets()}
+
+
+@app.post("/contexts")
+def create_context(body: ContextBody):
+    return contexts.create(body.task, body.preset, body.session_id, body.minutes, body.title)
+
+
+@app.get("/contexts/presets")
+def context_presets():
+    return {"data": contexts.presets(), "formats": list(contexts.FORMATS)}
+
+
+@app.get("/contexts/detail")
+def context_detail(session_id: int | None = None, start: str | None = None, end: str | None = None,
+                   minutes: int | None = None):
+    return contexts.detail(session_id, _parse(start), _parse(end), minutes)
+
+
+@app.get("/contexts/search")
+def context_search(q: str = "", session_id: int | None = None, start: str | None = None, end: str | None = None,
+                   minutes: int | None = None, limit: int = 20):
+    return contexts.find(q, session_id, _parse(start), _parse(end), minutes, max(1, min(limit, 100)))
+
+
+@app.get("/contexts/export")
+def context_export(format: str = "md", preset: str | None = None, session_id: int | None = None,
+                   context_id: int | None = None, minutes: int | None = None, task: str | None = None):
+    name, media_type, body = contexts.export(format, preset, session_id, context_id, minutes, task)
+    return Response(body, media_type=media_type, headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@app.get("/contexts/{context_id}")
+def get_saved_context(context_id: int):
+    return contexts.get(context_id)
+
+
+@app.delete("/contexts/{context_id}")
+def delete_saved_context(context_id: int):
+    return contexts.delete(context_id)
 
 
 # MCP
