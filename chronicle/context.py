@@ -163,11 +163,13 @@ def build(
             "seeds": sub["seeds"],
             "nodes": [
                 {"id": n["id"], "kind": n["kind"], "label": n["label"], "seconds": n["seconds"], "weight": n["weight"],
-                 "last_seen": n["last_seen"], "frames": [e["id"] for e in n["evidence"] if e.get("type") == "frame"][:3]}
+                 "effective_weight": n["effective_weight"], "last_seen": n["last_seen"],
+                 "frames": [e["id"] for e in n["evidence"] if e.get("type") == "frame"][:3]}
                 for n in sub["nodes"]
             ],
             "edges": [
-                {"src": e["src"], "dst": e["dst"], "rel": e["rel"], "weight": e["weight"]} for e in sub["edges"][: max_nodes * 2]
+                {"src": e["src"], "dst": e["dst"], "rel": e["rel"], "weight": e["weight"], "effective_weight": e["effective_weight"]}
+                for e in sub["edges"][: max_nodes * 2]
             ],
         },
         "evidence": evidence,

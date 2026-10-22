@@ -23,7 +23,7 @@ DENY_APPS = {
 }
 DENY_WINDOW_WORDS = ("password", "private browsing", "incognito", "inprivate")
 CLIPBOARD_LIMIT = 2000
-GRAPH_REFRESH_SECS = 120
+GRAPH_REFRESH_SECS = 30
 
 
 class CaptureLock:
@@ -192,7 +192,7 @@ class Recorder:
             self.last_graph = time.monotonic()
             from chronicle import graph
 
-            graph.build(sid)
+            graph.refresh(sid)
         return saved
 
 
