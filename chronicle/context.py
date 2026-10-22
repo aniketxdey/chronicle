@@ -23,6 +23,10 @@ def _local(stamp: str | None) -> str:
     return datetime.fromisoformat(stamp).astimezone(db.local_zone()).strftime("%a %H:%M")
 
 
+def _clock(stamp: str | None) -> str:
+    return datetime.fromisoformat(stamp).astimezone(db.local_zone()).strftime("%H:%M") if stamp else ""
+
+
 def _clip(text: str | None, size: int = SNIPPET) -> str:
     flat = " ".join((text or "").split())
     return flat if len(flat) <= size else flat[: size - 1] + "…"
@@ -112,6 +116,9 @@ def build(
         apps[block["app"]] = apps.get(block["app"], 0) + block["seconds"]
 
     scope_session = session_id
+    timeline = graph.tasks(session_id, since=None if session_id else start)
+    if end and not session_id:
+        timeline = [item for item in timeline if item["start"] <= end]
     sub = graph.subgraph(task, session_id=scope_session, max_nodes=max_nodes)
     summary = graph.summary(session_id=scope_session, top=6)
     labels = {node["id"]: node for node in sub["nodes"]}
@@ -148,6 +155,10 @@ def build(
         "recording": {"active": active is not None, "session_id": active["id"] if active else None,
                       "remaining_secs": active["remaining_secs"] if active else None},
         "now": now,
+        "tasks": [
+            {k: item[k] for k in ("id", "label", "verb", "start", "end", "duration_secs", "top_terms", "cluster_id", "frames")}
+            for item in timeline[-12:]
+        ],
         "apps": [{"app": app, "seconds": round(seconds)} for app, seconds in sorted(apps.items(), key=lambda kv: -kv[1])[:8]],
         "recent": [
             {**block, "seconds": round(block["seconds"]), "frames": block["frames"][-3:]} for block in blocks[-12:]
@@ -188,6 +199,15 @@ def render(pack: dict, labels: dict | None = None) -> str:
             f"Recording {pack['recording']['session_id']} is live"
             + (f", {format_duration(remaining)} left." if remaining is not None else ", until stopped.")
         )
+    if pack.get("tasks"):
+        lines += ["", "## What you were doing"]
+        clusters = [item["cluster_id"] for item in pack["tasks"]]
+        for item in pack["tasks"]:
+            topic = f" [topic {item['cluster_id']}]" if clusters.count(item["cluster_id"]) > 1 else ""
+            lines.append(
+                f"- {_clock(item['start'])}-{_clock(item['end'])} {item['label']} "
+                f"({format_duration(item['duration_secs'])}){topic}"
+            )
     now = pack["now"]
     if now:
         lines += ["", "## On screen now", f"- {now['app']} · {now['window'] or '(untitled)'} at {_local(now['timestamp'])} (frame {now['frame_id']})"]
@@ -239,6 +259,6 @@ def render(pack: dict, labels: dict | None = None) -> str:
     lines += [
         "",
         "Tools: get_frame(frame_id, include_image=true) shows a screenshot; query_graph and get_entity explore the graph; "
-        "search_history does full-text search.",
+        "list_tasks lists what the user was doing; search_history does full-text search.",
     ]
     return "\n".join(lines)
