@@ -256,6 +256,16 @@ def _doctor(probe) -> None:
             print("     a tiny screenshot usually means Screen Recording permission is missing for this terminal")
     print(f"[{'ok' if caps['ocr'] else '--'}] OCR: {'tesseract' if caps['ocr'] else 'install tesseract for screen text (brew install tesseract)'}")
     if sys.platform == "darwin":
+        trusted = caps["accessibility"]
+        print(f"[{'ok' if trusted else '!!'}] accessibility: {'granted' if trusted else probe.AX_HINT}")
+        result = probe.ax_text(unlock=False, build="wait") if trusted else None
+        if result is not None:
+            text, meta = result
+            built = f", built Swift helper in {meta['compile_ms']} ms" if meta.get("compiled") else ""
+            print(f"[{'ok' if meta['status'] == 'ok' else '!!'}] screen text via AX ({meta['helper']}{built}): "
+                  f"{meta['status']}, {len(text)} chars from {meta.get('app') or '?'} in {meta['elapsed_ms']} ms")
+        elif trusted:
+            print("[--] screen text via AX: no helper (needs osascript, or swiftc from the Command Line Tools)")
         print("macOS: grant your terminal (or the MCP host app) Screen Recording and Accessibility in "
               "System Settings > Privacy & Security.")
 
