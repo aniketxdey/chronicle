@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "chronicle": {
+      "command": "uvx",
+      "args": ["--from", "chronicle-context[graph]", "chronicle-context", "mcp"]
+    }
+  }
+}

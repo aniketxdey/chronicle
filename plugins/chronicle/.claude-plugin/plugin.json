@@ -1,0 +1,11 @@
+{
+  "name": "chronicle",
+  "displayName": "Chronicle",
+  "version": "0.2.0",
+  "description": "Gives Claude a local knowledge graph of what is on your screen and what you have been working on: apps, pages, searches, topics, files, tickets, people, and tasks, with evidence frames.",
+  "author": { "name": "Aniket Dey", "url": "https://github.com/aniketxdey" },
+  "homepage": "https://github.com/aniketxdey/chronicle",
+  "repository": "https://github.com/aniketxdey/chronicle",
+  "license": "MIT",
+  "keywords": ["computer-use", "context", "knowledge-graph", "screen", "memory", "mcp"]
+}

@@ -1,0 +1,12 @@
+{
+  "name": "chronicle",
+  "description": "Chronicle: local screen and activity context for agents.",
+  "owner": { "name": "Aniket Dey", "url": "https://github.com/aniketxdey" },
+  "plugins": [
+    {
+      "name": "chronicle",
+      "source": "./plugins/chronicle",
+      "description": "Local knowledge graph of your screen activity, served to Claude over MCP."
+    }
+  ]
+}

@@ -6,7 +6,8 @@ import json
 import os
 import subprocess
 import sys
-import tomllib
+
+import pytest
 
 from chronicle import clients
 from chronicle.mcp_server import handle
@@ -156,6 +157,7 @@ def test_install_merges_json_with_backup(tmp_path):
 
 
 def test_install_codex_toml_is_idempotent(tmp_path):
+    tomllib = pytest.importorskip("tomllib")
     target = tmp_path / "config.toml"
     target.write_text('model = "o4"\n\n[mcp_servers.other]\ncommand = "y"\n')
     clients.install("codex", path=target)

@@ -1,0 +1,20 @@
+{
+  "name": "chronicle",
+  "version": "0.2.0",
+  "description": "Local knowledge graph of your screen activity (apps, pages, searches, topics, files, tickets, people, tasks), served as context over MCP.",
+  "mcpServers": {
+    "chronicle": {
+      "command": "uvx",
+      "args": ["--from", "chronicle-context[graph]", "chronicle-context", "mcp"],
+      "timeout": 300000
+    }
+  },
+  "contextFileName": "GEMINI.md",
+  "settings": [
+    {
+      "name": "Chronicle home",
+      "description": "Folder for the database and screenshots. Leave empty for ~/.chronicle.",
+      "envVar": "CHRONICLE_HOME"
+    }
+  ]
+}
