@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from chronicle import __version__, capture, clients, content, context, db, graph, mcp_server, meetings, pipes, search, seed, sessions, workflows
+from chronicle import __version__, capture, clients, content, context, db, graph, mcp_server, meetings, pipes, search, seed, sessions, tuner, workflows
 from chronicle import ask as ask_mod
 from chronicle.timeutil import parse_time, utc_iso
 
@@ -169,6 +169,8 @@ class SettingsBody(BaseModel):
     ai_base_url: str | None = None
     ai_model: str | None = None
     ai_api_key: str | None = None
+    llm_provider: str | None = None
+    llm_model: str | None = None
 
 
 class PipeInstallBody(BaseModel):
@@ -196,6 +198,13 @@ class SessionBody(BaseModel):
 
 class GraphBuildBody(BaseModel):
     session_id: int | None = None
+
+
+class GraphTuneBody(BaseModel):
+    session_id: int | None = None
+    rounds: int = 2
+    reset: bool = False
+    force: bool = False
 
 
 class InstallBody(BaseModel):
@@ -326,6 +335,14 @@ def graph_node(id: str, session_id: int | None = None, limit: int = 25):
 @app.post("/graph/build")
 def graph_build(body: GraphBuildBody | None = None):
     return graph.build((body or GraphBuildBody()).session_id)
+
+
+@app.post("/graph/tune")
+def graph_tune(body: GraphTuneBody | None = None):
+    body = body or GraphTuneBody()
+    if body.reset:
+        return tuner.reset(body.session_id)
+    return tuner.tune(body.session_id, rounds=body.rounds, force=body.force)
 
 
 @app.get("/context")
@@ -663,7 +680,7 @@ def ai_status():
 
 SETTING_KEYS = [
     "onboarded", "timezone", "retention_days", "redact", "capture_interval_secs", "capture_clipboard",
-    "capture_screenshots", "capture_ocr", "idle_threshold_secs", "ai_base_url", "ai_model",
+    "capture_screenshots", "capture_ocr", "idle_threshold_secs", "ai_base_url", "ai_model", "llm_provider", "llm_model",
 ]
 BOOL_KEYS = {"onboarded", "redact", "capture_clipboard", "capture_screenshots", "capture_ocr"}
 
