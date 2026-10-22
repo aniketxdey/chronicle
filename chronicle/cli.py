@@ -52,6 +52,10 @@ def main(argv: list[str] | None = None) -> None:
     node = graph_sub.add_parser("node")
     node.add_argument("id")
     node.add_argument("--session", type=int)
+    tasks_parser = graph_sub.add_parser("tasks", help="what you were doing: activity segmented into tasks by topic")
+    tasks_parser.add_argument("--session", type=int)
+    tasks_parser.add_argument("--since", help="ISO timestamp or relative like '2h ago'")
+    tasks_parser.add_argument("--json", action="store_true")
     export = graph_sub.add_parser("export")
     export.add_argument("--session", type=int)
     export.add_argument("--limit", type=int, default=500)
@@ -166,11 +170,27 @@ def _dispatch(args) -> None:
             print(f"Graph {summary['scope']}: {sum(summary['counts'].values())} nodes, {summary['edges']} edges")
             for kind, count in summary["counts"].items():
                 names = ", ".join(item["label"] for item in summary["top"].get(kind, [])[:5])
-                print(f"  {kind:<11} {count:>4}  {names}")
+                print(f"  {kind:<13} {count:>4}  {names}")
+            if summary["tasks"]:
+                print("Tasks:")
+                for item in summary["tasks"][-12:]:
+                    print(f"  {_task_line(item)}")
             if summary["transitions"]:
                 print("Transitions:")
                 for item in summary["transitions"][:8]:
                     print(f"  {item['from']} -> {item['to']} ({int(item['count'])}x)")
+        elif args.graph_command == "tasks":
+            from chronicle.timeutil import parse_time
+
+            found = graph.tasks(session, since=parse_time(args.since))
+            if args.json:
+                _print(found)
+                return
+            print(f"{len(found)} tasks in {graph.scope_for(session)}")
+            for item in found:
+                print(f"  {_task_line(item)}")
+                names = ", ".join(entity["label"] for entity in item["involved"][:4])
+                print(f"      topic {item['cluster_id']}: {item['topic_label']}  ·  {', '.join(item['apps'])}" + (f"  ·  {names}" if names else ""))
         elif args.graph_command == "find":
             for item in graph.find(args.query, kind=args.kind, session_id=session):
                 print(f"{item['id']:<48} {item['kind']:<10} {int(item['seconds']):>6}s  {item['label']}")
@@ -225,6 +245,19 @@ def _dispatch(args) -> None:
         loaded = seed.load_sample()
         print("Loaded the sample workday." if loaded else "History is not empty; use --force to replace it with the sample.")
         print(f"Try: chronicle graph show  ·  chronicle context 'finish the Acme export'", file=sys.stderr)
+
+
+def _task_line(item: dict) -> str:
+    from datetime import datetime
+
+    from chronicle import db
+    from chronicle.timeutil import format_duration
+
+    def clock(stamp: str) -> str:
+        return datetime.fromisoformat(stamp).astimezone(db.local_zone()).strftime("%H:%M")
+
+    return (f"{clock(item['start'])}-{clock(item['end'])}  {format_duration(item['duration_secs']):>6}  {item['label']}"
+            f"  [topic {item['cluster_id']}, {item['frame_count']} frames]")
 
 
 def _doctor(probe) -> None:

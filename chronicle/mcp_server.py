@@ -20,6 +20,7 @@ import threading
 import traceback
 
 from chronicle import __version__, context, db, graph, meetings, search, sessions
+from chronicle.timeutil import parse_time
 
 PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"]
 SERVER_INFO = {"name": "chronicle", "title": "Chronicle", "version": __version__}
@@ -27,11 +28,14 @@ INSTRUCTIONS = (
     "Chronicle records this computer's screen and system events and keeps a knowledge graph of the apps, "
     "windows, pages, files, tickets, people, and projects involved. Call get_context first, with the task you "
     "are about to do, to see what is on screen and what the user has been working on. Use get_frame with "
-    "include_image=true when you need to look at a screenshot. Use start_recording to capture a demonstration "
+    "include_image=true when you need to look at a screenshot. Use list_tasks for a timeline of what the user was doing. Use start_recording to capture a demonstration "
     "for a preset amount of time, then get_context(session_id=...) to learn from it."
 )
 
-KINDS = ["app", "window", "site", "page", "person", "project", "customer", "ticket", "pr", "file", "identifier", "meeting", "topic", "session"]
+KINDS = [
+    "app", "window", "site", "page", "person", "project", "customer", "ticket", "pr", "file", "identifier", "meeting", "topic",
+    "task", "topic_cluster", "session",
+]
 
 
 def _schema(properties: dict, required: list[str] | None = None) -> dict:
@@ -99,6 +103,20 @@ TOOLS = [
         "description": "Counts by entity kind, the top entities of each kind, and the most common transitions.",
         "inputSchema": _schema({"session_id": SESSION_ID}),
         "annotations": {**READ, "title": "Graph summary"},
+    },
+    {
+        "name": "list_tasks",
+        "title": "List tasks",
+        "description": (
+            "What the user was doing, as a timeline of tasks (e.g. 'researching Forbes AI 50 · Crusoe', 4m) segmented "
+            "from screen activity by topic. Each task has start/end, a verb, top terms, a topic cluster shared with other "
+            "stints on the same topic, the pages and entities involved, and evidence frame ids."
+        ),
+        "inputSchema": _schema({
+            "session_id": SESSION_ID,
+            "since": {"type": "string", "description": "Only tasks ending after this ISO timestamp or relative time like '2h ago'."},
+        }),
+        "annotations": {**READ, "title": "List tasks"},
     },
     {
         "name": "get_frame",
@@ -258,6 +276,8 @@ def call_tool(name: str, args: dict) -> list[dict]:
         return [_text(graph.node(str(args["id"]), session_id=_int(args.get("session_id"))))]
     if name == "graph_summary":
         return [_text(graph.summary(session_id=_int(args.get("session_id"))))]
+    if name == "list_tasks":
+        return [_text(graph.tasks(_int(args.get("session_id")), since=parse_time(args.get("since"))))]
     if name == "get_frame":
         frame_id = int(args["frame_id"])
         bundle = _frame_payload(frame_id)

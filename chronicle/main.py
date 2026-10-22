@@ -313,6 +313,11 @@ def graph_summary(session_id: int | None = None):
     return graph.summary(session_id)
 
 
+@app.get("/graph/tasks")
+def graph_tasks(session_id: int | None = None, since: str | None = None):
+    return {"data": graph.tasks(session_id, since=_parse(since))}
+
+
 @app.get("/graph/search")
 def graph_search(q: str | None = None, kind: str | None = None, session_id: int | None = None, limit: int = 20):
     return {"data": graph.find(q, kind=kind, limit=limit, session_id=session_id)}
