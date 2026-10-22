@@ -7,16 +7,28 @@ empty value instead of raising, so the recorder can keep going on partial suppor
 
 from __future__ import annotations
 
+import hashlib
+import json
+import os
 import shutil
 import subprocess
 import sys
+import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from chronicle.redact import redact
 
 BROWSERS_CHROMIUM = {
     "Google Chrome", "Google Chrome Canary", "Chromium", "Arc", "Brave Browser", "Microsoft Edge", "Vivaldi", "Opera",
 }
 BROWSERS_SAFARI = {"Safari", "Safari Technology Preview", "Orion"}
+HELPERS = Path(__file__).parent / "helpers"
+AX_HINT = (
+    "grant Accessibility to the app that runs Chronicle (your terminal, or the MCP host such as Cursor or "
+    "Claude Desktop) in System Settings > Privacy & Security > Accessibility, then restart it"
+)
 
 FRONT_SCRIPT = r'''
 tell application "System Events"
@@ -231,9 +243,159 @@ def ocr(image: Path) -> str | None:
     return "\n".join(line for line in lines if len(line) > 1)[:20000] or None
 
 
+_ax_trust: tuple[float, bool | None] = (0.0, None)
+_ax_compiling: threading.Thread | None = None
+_ax_compile_error: str | None = None
+
+
+def _swift_paths() -> tuple[Path, Path, str]:
+    from chronicle import db
+
+    binary = db.home() / "bin" / "axdump"
+    digest = hashlib.sha256((HELPERS / "axdump.swift").read_bytes()).hexdigest()
+    return binary, binary.with_name("axdump.sha256"), digest
+
+
+def _swift_fresh() -> bool:
+    binary, stamp, digest = _swift_paths()
+    try:
+        return binary.exists() and stamp.read_text().strip() == digest
+    except OSError:
+        return False
+
+
+def _can_compile() -> bool:
+    # /usr/bin/swiftc is a shim that pops an install dialog when the Command Line Tools are missing.
+    if _ax_compile_error or not shutil.which("swiftc"):
+        return False
+    done = _run(["xcode-select", "-p"], timeout=3)
+    return bool(done and done.returncode == 0 and Path(done.stdout.strip()).exists())
+
+
+def compile_ax_helper() -> dict:
+    """Build axdump.swift into CHRONICLE_HOME/bin/axdump. Safe to race: each build renames into place."""
+    global _ax_compile_error
+    binary, stamp, digest = _swift_paths()
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    partial = binary.with_name(f"axdump.{os.getpid()}.{threading.get_ident()}.tmp")
+    began = time.monotonic()
+    done = _run(["swiftc", "-O", "-o", str(partial), str(HELPERS / "axdump.swift")], timeout=300)
+    ms = round((time.monotonic() - began) * 1000)
+    if done is None or done.returncode != 0 or not partial.exists():
+        partial.unlink(missing_ok=True)
+        _ax_compile_error = ((done.stderr if done else "") or "swiftc timed out").strip()[-500:] or "swiftc failed"
+        return {"compiled": False, "compile_ms": ms, "compile_error": _ax_compile_error}
+    partial.replace(binary)
+    stamp.write_text(digest)
+    return {"compiled": True, "compile_ms": ms}
+
+
+def ax_helper(build: str = "background") -> tuple[list[str], dict] | None:
+    """Command for the AX helper. build is never|background|wait; JXA serves while Swift builds or when it can't."""
+    global _ax_compiling
+    if sys.platform != "darwin":
+        return None
+    info: dict = {}
+    if not _swift_fresh() and build != "never" and _can_compile():
+        if build == "wait":
+            info = compile_ax_helper()
+        elif _ax_compiling is None or not _ax_compiling.is_alive():
+            _ax_compiling = threading.Thread(target=compile_ax_helper, name="chronicle-axdump-build", daemon=True)
+            _ax_compiling.start()
+    if _swift_fresh():
+        return [str(_swift_paths()[0])], {"helper": "swift", **info}
+    if shutil.which("osascript"):
+        return ["osascript", "-l", "JavaScript", str(HELPERS / "axdump.js")], {"helper": "jxa", **info}
+    return None
+
+
+def _ax_role(role: str) -> str:
+    if role == "AXStaticText":
+        return "text"
+    return role[2:].lower() if role.startswith("AX") else (role.lower() or "text")
+
+
+def parse_ax(output: str, max_chars: int = 8000) -> tuple[str, dict] | None:
+    """Turn axdump JSON lines into (redacted text, meta). meta["elements"] keeps reading order."""
+    meta: dict | None = None
+    elements: list[dict] = []
+    seen: set[str] = set()
+    total = 0
+    for line in output.splitlines():
+        try:
+            item = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(item, dict):
+            continue
+        if isinstance(item.get("meta"), dict):
+            meta = item["meta"]
+            continue
+        text = redact(str(item.get("text") or "")).strip()[: max(0, max_chars - total)]
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        total += len(text) + 1
+        elements.append({"role": _ax_role(str(item.get("role") or "")), "text": text, "depth": int(item.get("depth") or 0)})
+    if meta is None:
+        return None
+    meta["elements"] = elements
+    return "\n".join(element["text"] for element in elements), meta
+
+
+def ax_text(
+    pid: int | None = None,
+    *,
+    max_nodes: int = 2000,
+    max_chars: int = 8000,
+    budget: float = 1.0,
+    unlock: bool = True,
+    build: str = "background",
+) -> tuple[str, dict] | None:
+    """Text of the focused window of pid (default: frontmost app) via Accessibility. None when unavailable.
+
+    meta["status"] is ok|denied|no_app|no_window; meta["elapsed_ms"] includes subprocess startup.
+    """
+    helper = ax_helper(build)
+    if helper is None:
+        return None
+    command, info = helper
+    args = [str(max_nodes), str(max_chars), str(budget), "1" if unlock else "0"] + ([str(pid)] if pid else [])
+    began = time.monotonic()
+    # The helper polices its own budget; this is the backstop for a wedged AX server or a slow osascript start.
+    done = _run(command + args, timeout=budget + 2)
+    parsed = parse_ax(done.stdout if done is not None and done.returncode == 0 else "", max_chars)
+    if parsed is None and info["helper"] == "swift" and shutil.which("osascript"):
+        info["helper"] = "jxa"
+        info["swift_failed"] = True
+        done = _run(["osascript", "-l", "JavaScript", str(HELPERS / "axdump.js")] + args, timeout=budget + 2)
+        parsed = parse_ax(done.stdout if done is not None and done.returncode == 0 else "", max_chars)
+    if parsed is None:
+        return None
+    text, meta = parsed
+    meta.update(info)
+    meta["elapsed_ms"] = round((time.monotonic() - began) * 1000)
+    return text, meta
+
+
+def ax_trusted() -> bool | None:
+    """Whether processes we spawn may use Accessibility. Cached briefly; None off macOS or if unknown."""
+    global _ax_trust
+    if sys.platform != "darwin":
+        return None
+    checked, value = _ax_trust
+    if checked and time.monotonic() - checked < 30:
+        return value
+    done = _run(["osascript", "-l", "JavaScript", "-e", "ObjC.import('ApplicationServices'); $.AXIsProcessTrusted()"])
+    value = None if done is None or done.returncode != 0 else done.stdout.strip() == "true"
+    _ax_trust = (time.monotonic(), value)
+    return value
+
+
 def capabilities() -> dict:
     mac = sys.platform == "darwin"
     linux = sys.platform.startswith("linux")
+    helper = ax_helper("never") if mac else None
     return {
         "platform": sys.platform,
         "window": mac or sys.platform == "win32" or (linux and bool(shutil.which("xdotool"))),
@@ -244,4 +406,6 @@ def capabilities() -> dict:
         "clipboard": mac or sys.platform == "win32" or (linux and bool(shutil.which("wl-paste") or shutil.which("xclip"))),
         "idle": mac or sys.platform == "win32" or (linux and bool(shutil.which("xprintidle"))),
         "ocr": bool(shutil.which("tesseract")),
+        "accessibility": bool(ax_trusted()),
+        "ax_helper": None if helper is None else helper[1]["helper"],
     }

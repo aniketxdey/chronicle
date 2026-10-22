@@ -1,0 +1,22 @@
+{"text":"Start Page","role":"AXWindow","depth":0}
+{"role":"AXButton","text":"Share","depth":2}
+{"role":"AXButton","depth":2,"text":"New Tab"}
+{"depth":2,"text":"Tab Overview","role":"AXButton"}
+{"depth":3,"role":"AXButton","text":"Edit"}
+{"depth":3,"role":"AXButton","text":"show sidebar"}
+{"depth":3,"role":"AXMenuButton","text":"Tab Group picker"}
+{"text":"Show Search Menu","depth":3,"role":"AXButton"}
+{"depth":3,"text":"smart search field","role":"AXTextField"}
+{"role":"AXButton","depth":3,"text":"new tab"}
+{"role":"AXButton","text":"Go back","depth":4}
+{"depth":4,"role":"AXButton","text":"Go forward"}
+{"depth":4,"role":"AXButton","text":"add"}
+{"role":"AXList","depth":5,"text":"Favorites"}
+{"role":"AXList","text":"Privacy Report","depth":5}
+{"depth":5,"role":"AXList","text":"Reading List"}
+{"role":"AXHeading","text":"Crusoe raises funding for physical AI","depth":7}
+{"role":"AXStaticText","text":"Contact maya@example.com with key sk-abcdefghijklmnop","depth":8}
+{"role":"AXStaticText","text":"Contact lee@example.com with key sk-zyxwvutsrqponmlk","depth":8}
+warning: stray stderr line that leaked into stdout
+{"role":"AXLink","text":"Forbes AI 50","depth":8}
+{"meta":{"app":"Safari","pid":12888,"status":"ok","ms":62,"stop":"nodes","chars":664,"helper":"swift","trusted":true,"nodes":60}}

@@ -223,6 +223,7 @@ MIGRATIONS = [
     ("ui_events", "session_id", "INTEGER"),
     ("kg_nodes", "eff_weight", "REAL"),
     ("kg_edges", "eff_weight", "REAL"),
+    ("frames", "text_engine", "TEXT"),
 ]
 
 DEFAULTS = {
@@ -235,6 +236,8 @@ DEFAULTS = {
     "capture_clipboard": "1",
     "capture_screenshots": "1",
     "capture_ocr": "1",
+    "capture_ax": "1",
+    "ax_unlock_editors": "0",
     "idle_threshold_secs": "120",
     "ai_base_url": "",
     "ai_model": "",
@@ -443,14 +446,15 @@ def insert_frame(
     tags: list[str] | None = None,
     elements: list[dict] | None = None,
     session_id: int | None = None,
+    text_engine: str | None = None,
 ) -> int:
     cursor = connection.execute(
         """
         INSERT INTO frames (
             timestamp, app_name, window_name, browser_url, focused, capture_trigger,
             text_source, accessibility_text, ocr_text, full_text, snapshot_path,
-            device_name, text_hash, duration_secs, session_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            device_name, text_hash, duration_secs, session_id, text_engine
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             timestamp,
@@ -468,6 +472,7 @@ def insert_frame(
             text_hash,
             duration_secs,
             session_id,
+            text_engine,
         ),
     )
     frame_id = int(cursor.lastrowid)

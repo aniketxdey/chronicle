@@ -40,6 +40,7 @@ def add_screen(
     ocr_text: str | None = None,
     dedupe: bool = True,
     session_id: int | None = None,
+    text_engine: str | None = None,
 ) -> dict:
     cleaned = _clean(text)
     cleaned_ocr = _clean(ocr_text) if ocr_text else None
@@ -73,6 +74,7 @@ def add_screen(
             tags=tags,
             elements=elements,
             session_id=session_id,
+            text_engine=text_engine,
         )
         relative = None
         if svg:
