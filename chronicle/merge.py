@@ -156,6 +156,9 @@ def rule(a: _Item, b: _Item) -> tuple[float | None, str]:
             return 1.0, "prefix"
         if short[0] == long[0] and len(short) > 1:
             return 0.0, "prefix"
+        # "AI startups" narrows "startups": a leading modifier makes a different concept, not an alias.
+        if len(long) > len(short) and long[-len(short):] == short:
+            return 0.0, "modifier"
     return None, ""
 
 

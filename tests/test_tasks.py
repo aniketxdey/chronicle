@@ -121,7 +121,8 @@ def test_tasks_are_graph_nodes_and_exposed(client):
     rels = {(n["rel"], n["kind"]) for n in node["neighbors"]}
     assert ("part_of", "topic_cluster") in rels
     assert any(rel == "involved" for rel, _ in rels)
-    assert ("then", "task") in rels
+    # Tasks are per shard, so the first task of a shard has no predecessor.
+    assert any(("then", "task") in {(n["rel"], n["kind"]) for n in graph.node(item["id"])["neighbors"]} for item in found)
     summary = client.get("/graph/summary").json()
     assert summary["tasks"] and summary["counts"]["task"] == len(found)
     assert all(item["from"] != item["to"] for item in summary["transitions"])

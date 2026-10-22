@@ -166,3 +166,11 @@ def test_build_merges_tabs_behind_flag(client, monkeypatch, capsys):
     monkeypatch.setenv("CHRONICLE_MERGE", "0")
     assert graph.build(session_id)["merged"] == 0
     assert graph.summary(session_id)["counts"]["window"] == 4
+
+
+def test_leading_modifier_is_not_an_alias():
+    nodes = {
+        "topic:startups": {"id": "topic:startups", "kind": "topic", "label": "startups", "weight": 5, "props": {}},
+        "topic:ai-startups": {"id": "topic:ai-startups", "kind": "topic", "label": "AI startups", "weight": 2, "props": {}},
+    }
+    assert merge.plan(nodes) == []

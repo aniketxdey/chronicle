@@ -77,6 +77,10 @@ def test_aggregation_matches_unsharded_build_without_decay(fresh, monkeypatch):
     graph.build_unsharded()
     agg_nodes, agg_edges = _rows("all")
     raw_nodes, raw_edges = _rows("unsharded")
+    # Tasks are segmented per shard; the unsharded reference has none.
+    shard_only = {node_id for node_id, item in agg_nodes.items() if item["kind"] in graph.TASK_KINDS}
+    agg_nodes = {k: v for k, v in agg_nodes.items() if k not in shard_only}
+    agg_edges = {k: v for k, v in agg_edges.items() if k[0] not in shard_only and k[1] not in shard_only}
 
     assert set(agg_nodes) == set(raw_nodes)
     for node_id, raw in raw_nodes.items():
