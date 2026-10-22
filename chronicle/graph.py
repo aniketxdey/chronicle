@@ -21,7 +21,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
-from chronicle import db, keyphrases, merge
+from chronicle import db, keyphrases, merge, tasks as task_seg
 from chronicle.timeutil import utc_iso
 
 EVIDENCE_CAP = 8
@@ -46,8 +46,9 @@ _TOKEN = re.compile(r"[A-Za-z0-9_.#/-]{2,}")
 TAG_KINDS = {"person": "person", "project": "project", "customer": "customer"}
 KIND_ORDER = [
     "app", "window", "site", "page", "query", "topic", "person", "project", "customer", "ticket", "pr",
-    "file", "identifier", "meeting", "session",
+    "file", "identifier", "meeting", "task", "topic_cluster", "session",
 ]
+TASK_KINDS = ("task", "topic_cluster")
 
 
 def scope_for(session_id: int | None) -> str:
@@ -65,6 +66,8 @@ class _Builder:
         self.nodes: dict[str, dict] = {}
         self.edges: dict[tuple[str, str, str], dict] = {}
         self.merged = 0
+        self.items: list[task_seg.Item] = []
+        self.session_node: str | None = None
 
     def node(self, kind: str, key: str, label: str, *, ref: dict | None = None, seconds: float = 0, props=None) -> str:
         node_id = f"{kind}:{_slug(key)}"
@@ -259,7 +262,8 @@ def _extract(graph: _Builder, connection, frames, events, meetings, audio, sessi
                 graph.edge(query_id, topic_id, "about", ref=ref)
             entities.append(topic_id)
         text = f"{window_title}\n{frame['browser_url'] or ''}\n{frame['full_text'] or ''}"
-        for kind, key, label in extract(text, people)[:ENTITY_CAP]:
+        found = extract(text, people)[:ENTITY_CAP]
+        for kind, key, label in found:
             entity_id = graph.node(kind, key, label, ref=ref, seconds=seconds)
             graph.edge(window_id, entity_id, "shows", ref=ref)
             entities.append(entity_id)
@@ -268,6 +272,13 @@ def _extract(graph: _Builder, connection, frames, events, meetings, audio, sessi
             graph.edge(window_id, entity_id, "about", ref=ref)
             entities.append(entity_id)
         _co_occur(graph, entities, ref)
+        terms = [graph.nodes[node_id]["label"] for node_id in entities if node_id.startswith(("topic:", "query:"))]
+        graph.items.append(task_seg.Item(
+            start=datetime.fromisoformat(frame["timestamp"]), seconds=seconds, app=app_name,
+            window=frame["window_name"] or "", url=frame["browser_url"], text=frame["full_text"] or "",
+            terms=[*terms, *(label for kind, _, label in found if kind != "page")], involved=[app_id, *entities],
+            ref=ref, group=frame["session_id"],
+        ))
 
     for event in events:
         ref = {"type": "event", "id": event["id"], "timestamp": event["timestamp"], "event": event["event_type"]}
@@ -464,6 +475,7 @@ class _Raced(Exception):
 
 def _finish(graph: _Builder) -> None:
     """Whole-shard passes that need every frame at once; incremental passes skip them."""
+    task_seg.attach(graph, graph.items, graph.session_node)
     if merge.enabled():
         graph.merged = merge.apply(graph.nodes, graph.edges, merge.plan(graph.nodes), EVIDENCE_CAP)
 
@@ -520,6 +532,7 @@ def _session_pass(connection, session_id: int, *, incremental: bool, dry: bool =
     session_node = f"session:{session_id}"
     if previous is None:
         session_node = graph.node("session", str(session_id), row["label"] or f"Recording {session_id}")
+    graph.session_node = session_node
     state = _extract(graph, connection, frames, events, meetings, audio, session_node, marks.get("state") or {})
     if dry:
         return graph
@@ -980,7 +993,7 @@ def summary(session_id: int | None = None, top: int = 8) -> dict:
             FROM kg_edges e
             JOIN kg_nodes s ON s.scope = e.scope AND s.id = e.src
             JOIN kg_nodes d ON d.scope = e.scope AND d.id = e.dst
-            WHERE e.scope = ? AND e.rel IN ('switched_to', 'then')
+            WHERE e.scope = ? AND e.rel IN ('switched_to', 'then') AND s.kind != 'task'
             ORDER BY {_edge_rank(scope, 'e')} LIMIT ?
             """,
             (scope, top * 2),
@@ -994,6 +1007,7 @@ def summary(session_id: int | None = None, top: int = 8) -> dict:
         "counts": {row["kind"]: row["n"] for row in sorted(kinds, key=lambda r: order.get(r["kind"], 99))},
         "edges": edge_count,
         "top": tops,
+        "tasks": tasks(session_id)[-50:],
         "transitions": [
             {
                 "rel": row["rel"], "from": _transition_label(row["src_label"], row["src_props"]),
@@ -1011,6 +1025,47 @@ def summary(session_id: int | None = None, top: int = 8) -> dict:
 def _transition_label(label: str, props: str | None) -> str:
     app = json.loads(props or "{}").get("app")
     return f"{app} · {label}" if app else label
+
+
+def tasks(session_id: int | None = None, since: str | None = None, limit: int = 200) -> list[dict]:
+    """Tasks in time order, each with its topic cluster and the entities it involved."""
+    ensure(session_id)
+    scope = scope_for(session_id)
+    cutoff = datetime.fromisoformat(since) if since else None
+    with db.conn() as connection:
+        rows = connection.execute("SELECT * FROM kg_nodes WHERE scope = ? AND kind = 'task'", (scope,)).fetchall()
+        involved = connection.execute(
+            """
+            SELECT e.src, e.weight, n.id, n.kind, n.label FROM kg_edges e
+            JOIN kg_nodes n ON n.scope = e.scope AND n.id = e.dst
+            WHERE e.scope = ? AND e.rel = 'involved' AND n.kind NOT IN ('app', 'window')
+            ORDER BY e.weight DESC
+            """,
+            (scope,),
+        ).fetchall()
+        topics = {
+            row["id"]: row["label"]
+            for row in connection.execute("SELECT id, label FROM kg_nodes WHERE scope = ? AND kind = 'topic_cluster'", (scope,))
+        }
+    entities: dict[str, list[dict]] = {}
+    for row in involved:
+        bucket = entities.setdefault(row["src"], [])
+        if len(bucket) < 6:
+            bucket.append({"id": row["id"], "kind": row["kind"], "label": row["label"], "seconds": row["weight"]})
+    out = []
+    for row in rows:
+        props = json.loads(row["props"] or "{}")
+        if cutoff and props.get("end") and datetime.fromisoformat(props["end"]) < cutoff:
+            continue
+        out.append({
+            "id": row["id"], "label": row["label"], "verb": props.get("verb"), "start": props.get("start"),
+            "end": props.get("end"), "duration_secs": props.get("duration_secs"), "top_terms": props.get("top_terms", []),
+            "cluster_id": props.get("cluster_id"), "topic": props.get("topic"), "topic_label": topics.get(props.get("topic")),
+            "frame_count": props.get("frame_count"), "apps": props.get("apps", []), "involved": entities.get(row["id"], []),
+            "frames": [e["id"] for e in json.loads(row["evidence"] or "[]") if e.get("type") == "frame"][:4],
+        })
+    out.sort(key=lambda item: item["start"] or "")
+    return out[-max(1, min(limit, 1000)):]
 
 
 def find(q: str | None = None, kind: str | None = None, limit: int = 20, session_id: int | None = None) -> list[dict]:
@@ -1104,7 +1159,7 @@ def subgraph(task: str | None, session_id: int | None = None, max_nodes: int = 3
         if not task:
             rows = connection.execute(
                 f"""
-                SELECT * FROM kg_nodes WHERE scope = ? AND kind NOT IN ('window', 'session')
+                SELECT * FROM kg_nodes WHERE scope = ? AND kind NOT IN ('window', 'session', 'task', 'topic_cluster')
                 ORDER BY {_rank(scope)} LIMIT ?
                 """,
                 (scope, max_nodes),
@@ -1116,10 +1171,10 @@ def subgraph(task: str | None, session_id: int | None = None, max_nodes: int = 3
                 f"""
                 SELECT n.* FROM kg_edges e
                 JOIN kg_nodes n ON n.scope = e.scope AND n.id = CASE WHEN e.src = ? THEN e.dst ELSE e.src END
-                WHERE e.scope = ? AND (e.src = ? OR e.dst = ?) AND e.rel != 'has_window'
+                WHERE e.scope = ? AND (e.src = ? OR e.dst = ?) AND e.rel != 'has_window' AND n.kind NOT IN (?, ?)
                 ORDER BY {_edge_rank(scope, 'e')} LIMIT 6
                 """,
-                (seed["id"], scope, seed["id"], seed["id"]),
+                (seed["id"], scope, seed["id"], seed["id"], *TASK_KINDS),
             ).fetchall()
             for row in neighbors:
                 if len(chosen) >= max_nodes:
