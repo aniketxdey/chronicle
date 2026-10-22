@@ -477,6 +477,7 @@ def frame_public(row) -> dict:
         "focused": bool(row["focused"]),
         "capture_trigger": row["capture_trigger"],
         "text_source": row["text_source"],
+        "text_engine": row["text_engine"],
         "accessibility_text": row["accessibility_text"],
         "ocr_text": row["ocr_text"],
         "text": row["full_text"],

@@ -464,6 +464,7 @@ function recordHtml() {
     ["clipboard", "Clipboard"],
     ["idle", "Idle time"],
     ["ocr", "OCR (tesseract)"],
+    ["accessibility", "Accessibility text"],
   ]
     .map(([key, label]) => `<span class="chip ${caps[key] ? "ok" : "off"}">${caps[key] ? "✓" : "–"} ${esc(label)}</span>`)
     .join("");

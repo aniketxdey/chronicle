@@ -24,6 +24,9 @@ DENY_APPS = {
 DENY_WINDOW_WORDS = ("password", "private browsing", "incognito", "inprivate")
 CLIPBOARD_LIMIT = 2000
 GRAPH_REFRESH_SECS = 120
+AX_MIN_CHARS = 120
+# VS Code-family editors switch into "Screen Reader Optimized" mode when AXManualAccessibility is set.
+AX_NO_UNLOCK = {"Cursor", "Code", "Code - Insiders", "Visual Studio Code", "VSCodium", "Windsurf"}
 
 
 class CaptureLock:
@@ -158,11 +161,14 @@ class Recorder:
                 self.clip_hash = digest
         self.app, self.window, self.url = front.app, front.window, front.url
 
+        ax_text, elements = self.accessibility_text(front.app)
         shot_dir = db.media_root() / "frames"
         pending = shot_dir / f"pending-{os.getpid()}.jpg"
         has_image = db.get_bool("capture_screenshots", True) and probe.screenshot(pending)
-        ocr_text = probe.ocr(pending) if has_image and db.get_bool("capture_ocr", True) else None
-        text = "\n".join(part for part in (front.window, front.url or "", ocr_text or "") if part)
+        ocr_text = None
+        if ax_text is None and has_image and db.get_bool("capture_ocr", True):
+            ocr_text = probe.ocr(pending)
+        text = "\n".join(part for part in (front.window, front.url or "", ax_text or ocr_text or "") if part)
         saved = content.add_screen(
             text=text or front.app,
             app_name=front.app,
@@ -170,9 +176,11 @@ class Recorder:
             browser_url=front.url,
             trigger=trigger,
             text_source="ocr" if ocr_text else "accessibility",
+            text_engine="ax" if ax_text else "ocr" if ocr_text else "none",
             duration_secs=round(elapsed, 1),
             device_name="Main display",
             ocr_text=ocr_text,
+            elements=elements,
             dedupe=True,
             session_id=sid,
         )
@@ -194,6 +202,21 @@ class Recorder:
 
             graph.build(sid)
         return saved
+
+    def accessibility_text(self, app: str) -> tuple[str | None, list[dict] | None]:
+        if not db.get_bool("capture_ax", True):
+            return None, None
+        unlock = app not in AX_NO_UNLOCK or db.get_bool("ax_unlock_editors", False)
+        result = probe.ax_text(unlock=unlock)
+        if result is None:
+            return None, None
+        text, meta = result
+        db.set_setting("last_ax_status", f"{meta.get('status')} via {meta.get('helper')}: {len(text)} chars "
+                                         f"in {meta.get('elapsed_ms')}ms")
+        # The front app can change between the window probe and the AX walk.
+        if len(text) < AX_MIN_CHARS or str(meta.get("app") or "").casefold() != app.casefold():
+            return None, None
+        return text, meta.get("elements") or None
 
 
 _lock: CaptureLock | None = None
@@ -244,6 +267,7 @@ def status() -> dict:
         "recorder": holder.owner() if session else None,
         "last_error": db.get_setting("last_capture_error", "") or "",
         "last_capture_at": db.get_setting("last_capture_at", "") or "",
+        "last_ax_status": db.get_setting("last_ax_status", "") or "",
         "interval_secs": int(db.get_setting("capture_interval_secs", "5") or "5"),
         "idle_threshold_secs": int(db.get_setting("idle_threshold_secs", "120") or "120"),
         "clipboard": db.get_bool("capture_clipboard", True),
