@@ -1,0 +1,77 @@
+name: Release
+
+# Push a tag such as v0.2.0 after bumping every version (tests/test_packaging.py checks they match).
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+      - run: uv pip install -e ".[dev,graph]"
+      - run: pytest -q
+        env:
+          CHRONICLE_DISABLE_CAPTURE: "1"
+      - name: Tag matches package version
+        run: |
+          version=$(python -c "import chronicle; print(chronicle.__version__)")
+          test "v$version" = "$GITHUB_REF_NAME"
+      - run: uv build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  pypi:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  mcp-registry:
+    needs: pypi
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wait for PyPI to serve the new version
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          for i in $(seq 1 30); do
+            curl -sf "https://pypi.org/pypi/chronicle-context/$version/json" >/dev/null && exit 0
+            sleep 10
+          done
+          exit 1
+      - name: Install mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+      - run: ./mcp-publisher login github-oidc
+      - run: ./mcp-publisher publish
+
+  github-release:
+    needs: pypi
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

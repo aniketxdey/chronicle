@@ -1,5 +1,7 @@
 # Chronicle
 
+<!-- mcp-name: io.github.aniketxdey/chronicle -->
+
 Record your computer for a set amount of time, turn the recording into a knowledge graph, and serve it as context to any computer-use agent over MCP.
 
 ```
@@ -19,15 +21,16 @@ Chronicle is an open-source take on the idea behind screen-memory products like 
 
 ## Install
 
-Requires Python 3.10+. The only dependencies are FastAPI and uvicorn.
+Requires Python 3.10+. The only required dependencies are FastAPI and uvicorn. The `graph` extra adds scikit-learn and scipy for better duplicate merging.
 
 ```bash
-git clone <this repo> chronicle && cd chronicle
-uv venv && uv pip install -e .        # or: python -m venv .venv && .venv/bin/pip install -e .
+uv tool install "chronicle-context[graph]"   # or: pipx install "chronicle-context[graph]"
 chronicle doctor                      # checks window, URL, screenshot, clipboard, idle, OCR access
 chronicle demo                        # optional: a sample workday to try everything without recording
 chronicle serve                       # UI at http://127.0.0.1:3030, MCP at /mcp
 ```
+
+Or run it without installing: `uvx chronicle-context mcp`. To work on the code, run `git clone https://github.com/aniketxdey/chronicle && cd chronicle && uv pip install -e ".[dev,graph]"`.
 
 **macOS:** grant **Screen Recording** and **Accessibility** to whatever runs Chronicle (your terminal, or the MCP host app such as Claude Desktop or Cursor) under System Settings › Privacy & Security. Browser URLs and tab titles also need a one-time Automation prompt per browser. Supported browsers are Safari, Chrome, Arc, Brave, Edge, Vivaldi, and Opera.
 **Linux (best effort):** X11 with `xdotool` and `xprop`. For screenshots install one of `grim`, `gnome-screenshot`, `scrot`, or ImageMagick `import`; add `xclip`/`wl-paste` for the clipboard and `xprintidle` for idle time.
@@ -36,9 +39,21 @@ chronicle serve                       # UI at http://127.0.0.1:3030, MCP at /mcp
 
 ## Connect an agent
 
+### Packaged installs
+
+These need [uv](https://docs.astral.sh/uv/) on the `PATH`. Each one runs `uvx chronicle-context mcp` and ships instructions telling the model to call `get_context` first.
+
+- **Claude Code, Claude Desktop, Cowork:** `claude plugin marketplace add aniketxdey/chronicle`, then `claude plugin install chronicle@chronicle`.
+- **Gemini CLI:** `gemini extensions install https://github.com/aniketxdey/chronicle`.
+- **MCP Registry clients:** search for `io.github.aniketxdey/chronicle`.
+
+[docs/PUBLISHING.md](docs/PUBLISHING.md) covers how each listing is released. [PRIVACY.md](PRIVACY.md) covers what is stored and where it goes.
+
+### Manual setup
+
 `chronicle mcp clients` lists every supported client, and `chronicle mcp config <client>` prints the snippet to paste. `chronicle mcp install <client>` merges it into the client's config file and keeps a `.chronicle-backup` copy of the old one. The **Connect** page in the UI does the same.
 
-### Local agents (stdio)
+#### Local agents (stdio)
 
 | Client | Command | Config written |
 | --- | --- | --- |
@@ -60,7 +75,7 @@ The generic stdio entry is:
 
 A stdio server also records: whichever Chronicle process holds `~/.chronicle/capture.lock` captures while a session is active. An agent can therefore call `start_recording` with no `chronicle serve` running. Pass `--no-record` to opt out.
 
-### Remote agents and model APIs (Streamable HTTP)
+#### Remote agents and model APIs (Streamable HTTP)
 
 `chronicle serve` exposes MCP at `POST /mcp` (protocol versions 2025-06-18, 2025-03-26, and 2024-11-05). Hosted agents need a public HTTPS URL, so run it behind a tunnel and set a token:
 
@@ -89,6 +104,7 @@ The `chronicle mcp config <client>` snippets for providers are starting points. 
 | `get_context` | Context pack for a task: screen now, recent activity, events, transitions, relevant subgraph, evidence |
 | `search_history` | Full-text search over screen text, events, transcripts, memories |
 | `query_graph` / `get_entity` / `graph_summary` | Find entities, walk neighbors with evidence frames, see counts and top transitions |
+| `list_tasks` | Timeline of tasks the user worked on, segmented from activity and grouped by topic |
 | `get_frame` | One frame with nearby events and audio; `include_image=true` attaches the screenshot |
 | `start_recording` / `stop_recording` / `list_sessions` | Record a demonstration for a preset duration, from the agent itself |
 | `rebuild_graph`, `activity_summary`, `list_meetings` | Maintenance and summaries |

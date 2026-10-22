@@ -1,0 +1,42 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.aniketxdey/chronicle",
+  "title": "Chronicle",
+  "description": "Local screen and activity knowledge graph, served as context to computer-use agents.",
+  "repository": {
+    "url": "https://github.com/aniketxdey/chronicle",
+    "source": "github"
+  },
+  "websiteUrl": "https://github.com/aniketxdey/chronicle",
+  "version": "0.2.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "chronicle-context",
+      "version": "0.2.0",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "CHRONICLE_HOME",
+          "description": "Folder for the database and screenshots (default ~/.chronicle)",
+          "isRequired": false
+        },
+        {
+          "name": "CHRONICLE_DISABLE_CAPTURE",
+          "description": "Set to 1 so this process serves context but never records",
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}

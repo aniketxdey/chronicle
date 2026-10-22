@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.10", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - run: uv pip install -e ".[dev,graph]"
+      - run: pytest -q
+        env:
+          CHRONICLE_DISABLE_CAPTURE: "1"
+
+  manifests:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv build
+      - name: Validate server.json against the MCP Registry schema
+        run: |
+          schema=$(jq -r '."$schema"' server.json)
+          uvx check-jsonschema --schemafile "$schema" server.json
