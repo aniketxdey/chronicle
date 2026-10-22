@@ -19,7 +19,7 @@ import sys
 import threading
 import traceback
 
-from chronicle import __version__, context, db, graph, meetings, search, sessions
+from chronicle import __version__, context, db, graph, meetings, search, sessions, tuner
 from chronicle.timeutil import parse_time
 
 PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"]
@@ -32,10 +32,7 @@ INSTRUCTIONS = (
     "for a preset amount of time, then get_context(session_id=...) to learn from it."
 )
 
-KINDS = [
-    "app", "window", "site", "page", "query", "person", "project", "customer", "ticket", "pr", "file", "identifier", "meeting",
-    "topic", "task", "topic_cluster", "session",
-]
+KINDS = graph.KIND_ORDER
 
 
 def _schema(properties: dict, required: list[str] | None = None) -> dict:
@@ -169,6 +166,22 @@ TOOLS = [
         "description": "Rebuild the knowledge graph for all history or one session from the stored frames and events.",
         "inputSchema": _schema({"session_id": SESSION_ID}),
         "annotations": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False, "title": "Rebuild graph"},
+    },
+    {
+        "name": "tune_graph",
+        "title": "Tune graph with an LLM",
+        "description": (
+            "Have the configured LLM (CHRONICLE_LLM=openai) review the heuristic graph and patch it: add real-world "
+            "entities, typed relations, and activity summaries, merge duplicates, clean labels, drop noise. Patches "
+            "survive rebuilds; reset=true removes them. Off unless an LLM provider is configured."
+        ),
+        "inputSchema": _schema({
+            "session_id": SESSION_ID,
+            "rounds": {"type": "integer", "description": "Review passes (1-5, default 2)."},
+            "force": {"type": "boolean", "description": "Ignore the response cache and the up-to-date check."},
+            "reset": {"type": "boolean", "description": "Remove all LLM patches for the scope instead of tuning."},
+        }),
+        "annotations": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True, "title": "Tune graph"},
     },
     {
         "name": "list_meetings",
@@ -308,6 +321,11 @@ def call_tool(name: str, args: dict) -> list[dict]:
         return [_text(sessions.stop(_int(args.get("session_id"))))]
     if name == "rebuild_graph":
         return [_text(graph.build(_int(args.get("session_id"))))]
+    if name == "tune_graph":
+        session_id = _int(args.get("session_id"))
+        if args.get("reset"):
+            return [_text(tuner.reset(session_id))]
+        return [_text(tuner.tune(session_id, rounds=_int(args.get("rounds"), 2), force=bool(args.get("force"))))]
     if name == "list_meetings":
         items = meetings.list_meetings()[: _int(args.get("limit"), 10)]
         return [_text(items)]

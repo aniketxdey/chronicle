@@ -33,6 +33,7 @@ Privacy = "https://github.com/aniketxdey/chronicle/blob/main/PRIVACY.md"
 [project.optional-dependencies]
 dev = ["pytest>=8", "httpx>=0.27", "build>=1.2"]
 graph = ["scikit-learn>=1.3", "scipy>=1.10", "numpy>=1.24"]
+llm = ["openai>=1.66", "python-dotenv>=1.0"]
 
 [project.scripts]
 chronicle = "chronicle.cli:main"

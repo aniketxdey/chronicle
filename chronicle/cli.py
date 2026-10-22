@@ -57,6 +57,11 @@ def main(argv: list[str] | None = None) -> None:
     tasks_parser.add_argument("--session", type=int)
     tasks_parser.add_argument("--since", help="ISO timestamp or relative like '2h ago'")
     tasks_parser.add_argument("--json", action="store_true")
+    tune = graph_sub.add_parser("tune", help="let the configured LLM patch the graph (CHRONICLE_LLM=openai)")
+    tune.add_argument("--session", type=int)
+    tune.add_argument("--rounds", type=int, default=2)
+    tune.add_argument("--force", action="store_true", help="ignore the cache and the up-to-date check")
+    tune.add_argument("--reset", action="store_true", help="remove all LLM patches for the scope")
     export = graph_sub.add_parser("export")
     export.add_argument("--session", type=int)
     export.add_argument("--limit", type=int, default=500)
@@ -119,7 +124,7 @@ def main(argv: list[str] | None = None) -> None:
 
 
 def _dispatch(args) -> None:
-    from chronicle import ask, capture, clients, context, db, graph, probe, search, seed, sessions
+    from chronicle import ask, capture, clients, context, db, graph, probe, search, seed, sessions, tuner
 
     if args.command == "record":
         session = sessions.start(args.duration, label=args.label, interval_secs=args.interval)
@@ -155,6 +160,12 @@ def _dispatch(args) -> None:
         final = sessions.get(session["id"])
         if final["status"] == "recording":
             final = sessions.stop(session["id"])
+        if tuner.pending():
+            print("  tuning the graph with the LLM...", file=sys.stderr)
+            tuner.wait()
+            error = db.get_setting("last_llm_error")
+            if error:
+                print(f"  LLM: {error}", file=sys.stderr)
         _print({k: final[k] for k in ("id", "status", "elapsed", "frames", "events", "apps", "scope")})
         print(f"\nNext: chronicle context --session {final['id']}", file=sys.stderr)
         return
@@ -177,6 +188,15 @@ def _dispatch(args) -> None:
                 half = summary["half_life_hours"]
                 decay = f", ranked by weight decayed with a {half:g}h half-life" if half else ", no decay"
             print(f"Graph {summary['scope']}: {sum(summary['counts'].values())} nodes, {summary['edges']} edges{decay}")
+            tuned = summary["llm"]
+            if tuned["activities"]:
+                print("Activities (LLM):")
+                for item in tuned["activities"]:
+                    print(f"  {item['summary']}")
+            if tuned["relations"]:
+                print("Relations (LLM):")
+                for item in tuned["relations"]:
+                    print(f"  {item['from']} —{item['rel']}→ {item['to']} ({item['confidence']})")
             for kind, count in summary["counts"].items():
                 names = ", ".join(item["label"] for item in summary["top"].get(kind, [])[:5])
                 print(f"  {kind:<13} {count:>4}  {names}")
@@ -218,6 +238,8 @@ def _dispatch(args) -> None:
                 print(f"  {cluster['kind']:<8} {cluster['label']}  [{cluster['id']}]")
                 for member in cluster["members"]:
                     print(f"    <- {member['score']:.2f} {member['reason']:<10} {member['kind']:<8} {member['label']}")
+        elif args.graph_command == "tune":
+            _print(tuner.reset(session) if args.reset else tuner.tune(session, rounds=args.rounds, force=args.force))
         else:
             _print(graph.export(session, limit=args.limit))
         return
