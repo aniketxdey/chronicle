@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chronicle: your computer's history as context for AI agents</title>
+<meta name="description" content="Chronicle records your screen and system events locally, turns them into a knowledge graph, and serves it to Claude, ChatGPT, Cursor, Gemini, and other agents over MCP.">
+<meta property="og:title" content="Chronicle">
+<meta property="og:description" content="Local screen and activity knowledge graph, served as context to AI agents over MCP.">
+<meta property="og:image" content="https://aniketxdey.github.io/chronicle/assets/headline.png">
+<link rel="icon" href="assets/icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top"><div class="top-inner">
+  <a class="brand" href="./"><img src="assets/icon.png" alt="">Chronicle</a>
+  <nav>
+    <a href="install.html">Install</a>
+    <a href="clients.html">Connect an agent</a>
+    <a href="guide.html">Guide</a>
+    <a href="benchmark.html">Benchmark</a>
+  </nav>
+  <a class="gh" href="https://github.com/aniketxdey/chronicle">GitHub</a>
+</div></header>
+
+<main>
+<section class="hero">
+  <h1>Your computer's recent history, as context for any agent</h1>
+  <p class="lede">Chronicle records your screen and system events on your own machine, turns them into a knowledge graph of apps, pages, files, tickets, people, and tasks, and serves that graph to LLM agents over MCP. When you ask an agent to "finish the Acme export", it can see the file you had open, the PR waiting on review, and the spec you read an hour ago.</p>
+  <div class="cta">
+    <a class="btn primary" href="install.html">Install</a>
+    <a class="btn" href="clients.html">Connect Claude, ChatGPT, Cursor, Gemini, and others</a>
+  </div>
+  <img src="assets/headline.png" alt="Chronicle's knowledge graph view of the sample workday">
+  <p class="caption">The all-history knowledge graph for the synthetic sample workday that <code>chronicle demo</code> loads. No real screen data is shown on this site.</p>
+</section>
+
+<h2>Try it in a minute</h2>
+<p>You need <a href="https://docs.astral.sh/uv/">uv</a> and Python 3.10 or newer. The demo loads a synthetic workday, so you can see what an agent receives before recording anything.</p>
+<pre><code>uv tool install "chronicle-context[graph]"
+chronicle demo
+chronicle context "finish the Acme export"
+chronicle mcp install cursor        # or claude-desktop, claude-code, codex, vscode, gemini-cli, ...</code></pre>
+<p><code>chronicle context</code> prints the same Markdown that an agent gets from the <code>get_context</code> tool. On the sample workday it starts like this:</p>
+<pre><code># Computer context (Chronicle)
+Task: finish the Acme export
+
+## What you were doing
+- 15:34-15:56 writing Acme Export spec · amount_usd (22m) [topic 1]
+- 16:28-16:48 coding export.ts · amount_usd (20m) [topic 2]
+- 16:50-17:02 coding Checks passed · Merge (12m) [topic 3]
+
+## On screen now
+- Chrome · Checks · PR 882 at Sun 16:50 (frame 18)
+- URL: https://github.com/northwind/billing/actions
+
+## Knowledge graph (all)
+- [topic] Acme export (`topic:acme-export`, 1h58m, frames 18, 16, 13)
+- [pr] PR 882 (`pr:882`, 2h42m, frames 18, 17, 16)
+- [file] export.ts (`file:export.ts`, 1h48m, frames 17, 11, 6)</code></pre>
+
+<h2>What it's for</h2>
+<div class="grid">
+  <div class="card"><h3>Pick up where you left off</h3><p>The agent sees what you were editing, reading, and waiting on, so a short instruction is enough.</p></div>
+  <div class="card"><h3>Teach by showing</h3><p>Record yourself doing a task once. The agent gets the apps, pages, and steps in order and can repeat them.</p></div>
+  <div class="card"><h3>Context for tools without MCP</h3><p>Export a recording as a Markdown context file, JSON, GraphML, or Cypher for ChatGPT or Claude Projects, NotebookLM, Neo4j, or a RAG pipeline.</p></div>
+</div>
+
+<h2>How it works</h2>
+<p><strong>Record.</strong> Every 5 seconds by default, Chronicle samples the front app and window, the browser URL, screen text from the Accessibility tree or OCR, and a screenshot, and logs app switches, URL changes, clipboard copies, and idle time. Keystrokes are never recorded. Password managers, System Settings, and private browsing windows are skipped, and emails, API keys, JWTs, and card numbers are redacted before anything is written.</p>
+<p><strong>Build the graph.</strong> Each recording becomes a graph shard of apps, pages, searches, topics, files, tickets, PRs, people, projects, and tasks. Every node and edge records how long you spent on it and which frames it came from, so an agent can cite its evidence. The all-history graph weights recent shards more (a 72-hour half-life by default). With an OpenAI key, a model also refines each recording, for example recognizing that a name is a company or that a page is a job posting.</p>
+<p><strong>Serve.</strong> Agents call <code>get_context(task)</code> for a context pack, then drill down with <code>query_graph</code>, <code>search_history</code>, and <code>get_frame</code>, which can return the screenshot itself.</p>
+
+<div class="shots">
+  <figure><img src="assets/screens/contexts-all-files.png" alt="Context files view"><figcaption>Context files for eight kinds of work, plus graph exports.</figcaption></figure>
+  <figure><img src="assets/screens/contexts-all-timeline.png" alt="Timeline view"><figcaption>Timeline of frames, system events, and segmented tasks.</figcaption></figure>
+  <figure><img src="assets/screens/workflows.png" alt="Workflows view"><figcaption>Loops that repeat across recordings.</figcaption></figure>
+  <figure><img src="assets/screens/integrations.png" alt="Integrations view"><figcaption>MCP setup for each client.</figcaption></figure>
+</div>
+<p class="caption">All screenshots show the synthetic sample workday.</p>
+
+<h2>Privacy</h2>
+<p>Everything lives in one local folder (<code>~/.chronicle</code>). There's no account and no telemetry. Data leaves the machine only through tools you connect: an agent receives the tool results it asks for, and when an OpenAI key is available, window titles, URLs, and redacted screen text go to OpenAI for graph refinement. You can switch that off with <code>CHRONICLE_LLM=off</code>. The full policy is in <a href="https://github.com/aniketxdey/chronicle/blob/main/PRIVACY.md">PRIVACY.md</a>.</p>
+
+<h2>Platforms</h2>
+<p>macOS is the main platform. Linux (X11) and Windows capture are best effort; see <a href="install.html">Install</a> for what each one records.</p>
+</main>
+
+<footer><div>Chronicle is MIT licensed. Built by <a href="https://github.com/aniketxdey">Aniket Dey</a>. <a href="https://github.com/aniketxdey/chronicle/issues">Report an issue</a>.</div></footer>
+<script src="site.js"></script>
+</body>
+</html>

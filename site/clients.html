@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connect an agent to Chronicle</title>
+<link rel="icon" href="assets/icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top"><div class="top-inner">
+  <a class="brand" href="./"><img src="assets/icon.png" alt="">Chronicle</a>
+  <nav>
+    <a href="install.html">Install</a>
+    <a class="on" href="clients.html">Connect an agent</a>
+    <a href="guide.html">Guide</a>
+    <a href="benchmark.html">Benchmark</a>
+  </nav>
+  <a class="gh" href="https://github.com/aniketxdey/chronicle">GitHub</a>
+</div></header>
+
+<main>
+<h1>Connect an agent</h1>
+<p class="lede">Chronicle is an MCP server. Desktop and command-line clients start it locally over stdio. Hosted agents such as ChatGPT and the model APIs reach it over Streamable HTTP through a tunnel you control.</p>
+
+<div class="os-switch" role="group" aria-label="Operating system">
+  <button type="button" data-set="mac">macOS</button><button type="button" data-set="linux">Linux</button><button type="button" data-set="win">Windows</button>
+</div>
+
+<ul class="toc">
+  <li><a href="#claude-code">Claude Code</a></li>
+  <li><a href="#claude-desktop">Claude Desktop and Cowork</a></li>
+  <li><a href="#cursor">Cursor</a></li>
+  <li><a href="#vscode">VS Code (Copilot)</a></li>
+  <li><a href="#codex">OpenAI Codex CLI</a></li>
+  <li><a href="#gemini-cli">Gemini CLI</a></li>
+  <li><a href="#windsurf">Windsurf</a></li>
+  <li><a href="#cline">Cline</a></li>
+  <li><a href="#lm-studio">LM Studio</a></li>
+  <li><a href="#zed">Zed</a></li>
+  <li><a href="#continue">Continue</a></li>
+  <li><a href="#goose">Goose</a></li>
+  <li><a href="#chatgpt">ChatGPT</a></li>
+  <li><a href="#openai-api">OpenAI Responses API</a></li>
+  <li><a href="#anthropic-api">Anthropic Messages API</a></li>
+  <li><a href="#gemini-api">Gemini API</a></li>
+  <li><a href="#http">Any HTTP client</a></li>
+  <li><a href="#other">Any other client</a></li>
+</ul>
+
+<h2>Two ways to run the server</h2>
+<p><strong>Installed.</strong> After <code>uv tool install "chronicle-context[graph]"</code>, <code>chronicle mcp install &lt;client&gt;</code> writes the server into that client's config and keeps the old file as <code>*.chronicle-backup</code>. <code>chronicle mcp config &lt;client&gt;</code> prints the snippet instead, and <code>--dry-run</code> shows what would be written. Restart the client afterwards.</p>
+<p><strong>Without installing.</strong> Any client can run the published package through <code>uvx</code>, as long as uv is on its <code>PATH</code>:</p>
+<pre><code>{
+  "mcpServers": {
+    "chronicle": {
+      "command": "uvx",
+      "args": ["--from", "chronicle-context[graph]", "chronicle-context", "mcp"]
+    }
+  }
+}</code></pre>
+<p class="note">A stdio server can record by itself when the agent calls <code>start_recording</code>. Only one Chronicle process captures at a time (whichever holds <code>~/.chronicle/capture.lock</code>), so this is safe alongside <code>chronicle serve</code>. Add <code>--no-record</code> to the args to turn it off. On macOS, the client app then needs the Screen Recording and Accessibility permissions.</p>
+
+<h2>Desktop and command-line clients</h2>
+
+<h3 id="claude-code">Claude Code</h3>
+<p>The plugin installs the server and a skill that tells Claude to call <code>get_context</code> before acting:</p>
+<pre><code>claude plugin marketplace add aniketxdey/chronicle
+claude plugin install chronicle@chronicle</code></pre>
+<p>Or register the installed command directly, then run <code>/mcp</code> inside Claude Code to check it:</p>
+<pre><code>chronicle mcp install claude-code    # runs: claude mcp add --scope user chronicle -- chronicle mcp</code></pre>
+
+<h3 id="claude-desktop">Claude Desktop and Cowork</h3>
+<p>In Claude Desktop's plugin settings, add the marketplace <code>aniketxdey/chronicle</code> and install <strong>chronicle</strong>. Or write the config yourself:</p>
+<pre><code>chronicle mcp install claude-desktop</code></pre>
+<table>
+  <tr><th>OS</th><th>Config file (key <code>mcpServers</code>)</th></tr>
+  <tr data-os="mac"><td>macOS</td><td><code>~/Library/Application Support/Claude/claude_desktop_config.json</code></td></tr>
+  <tr data-os="win"><td>Windows</td><td><code>%APPDATA%\Claude\claude_desktop_config.json</code></td></tr>
+  <tr data-os="linux"><td>Linux</td><td><code>~/.config/Claude/claude_desktop_config.json</code>. Anthropic ships Claude Desktop for macOS and Windows; this path is for unofficial Linux builds.</td></tr>
+</table>
+<p>Quit and reopen Claude Desktop.</p>
+
+<h3 id="cursor">Cursor</h3>
+<p><a class="btn" href="cursor://anysphere.cursor-deeplink/mcp/install?name=chronicle&amp;config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyItLWZyb20iLCJjaHJvbmljbGUtY29udGV4dFtncmFwaF0iLCJjaHJvbmljbGUtY29udGV4dCIsIm1jcCJdfQ==">Add to Cursor</a> uses the <code>uvx</code> config. Or:</p>
+<pre><code>chronicle mcp install cursor</code></pre>
+<table>
+  <tr><th>OS</th><th>Config file (key <code>mcpServers</code>)</th></tr>
+  <tr data-os="mac linux"><td>macOS, Linux</td><td><code>~/.cursor/mcp.json</code></td></tr>
+  <tr data-os="win"><td>Windows</td><td><code>%USERPROFILE%\.cursor\mcp.json</code></td></tr>
+</table>
+<p>Check in Cursor's MCP settings that <strong>chronicle</strong> is enabled.</p>
+
+<h3 id="vscode">VS Code (Copilot agent mode)</h3>
+<pre><code>chronicle mcp install vscode</code></pre>
+<p>Or, without installing Chronicle, let VS Code add it:</p>
+<pre><code>code --add-mcp '{"name":"chronicle","command":"uvx","args":["--from","chronicle-context[graph]","chronicle-context","mcp"]}'</code></pre>
+<table>
+  <tr><th>OS</th><th>Config file (key <code>servers</code>, <code>"type": "stdio"</code>)</th></tr>
+  <tr data-os="mac"><td>macOS</td><td><code>~/Library/Application Support/Code/User/mcp.json</code></td></tr>
+  <tr data-os="win"><td>Windows</td><td><code>%APPDATA%\Code\User\mcp.json</code></td></tr>
+  <tr data-os="linux"><td>Linux</td><td><code>~/.config/Code/User/mcp.json</code></td></tr>
+</table>
+<p>Open Copilot Chat in Agent mode and enable the Chronicle tools from the tools picker.</p>
+
+<h3 id="codex">OpenAI Codex CLI</h3>
+<pre><code>chronicle mcp install codex</code></pre>
+<p>This adds a <code>[mcp_servers.chronicle]</code> table to <code>~/.codex/config.toml</code> (<code>%USERPROFILE%\.codex\config.toml</code> on Windows), replacing an older Chronicle entry if there is one. Start a new session; <code>/mcp</code> lists the servers.</p>
+
+<h3 id="gemini-cli">Gemini CLI</h3>
+<p>The extension installs the server and a <code>GEMINI.md</code> with instructions for when to call each tool:</p>
+<pre><code>gemini extensions install https://github.com/aniketxdey/chronicle</code></pre>
+<p>Or <code>chronicle mcp install gemini-cli</code>, which writes <code>~/.gemini/settings.json</code> (<code>%USERPROFILE%\.gemini\settings.json</code> on Windows). <code>/mcp</code> in a session lists the tools.</p>
+
+<h3 id="windsurf">Windsurf</h3>
+<pre><code>chronicle mcp install windsurf</code></pre>
+<p>Writes <code>~/.codeium/windsurf/mcp_config.json</code> (under <code>%USERPROFILE%</code> on Windows). Restart Windsurf.</p>
+
+<h3 id="cline">Cline</h3>
+<pre><code>chronicle mcp install cline</code></pre>
+<table>
+  <tr><th>OS</th><th>Config file</th></tr>
+  <tr data-os="mac"><td>macOS</td><td><code>~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json</code></td></tr>
+  <tr data-os="win"><td>Windows</td><td><code>%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\settings\cline_mcp_settings.json</code></td></tr>
+  <tr data-os="linux"><td>Linux</td><td><code>~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json</code></td></tr>
+</table>
+
+<h3 id="lm-studio">LM Studio</h3>
+<pre><code>chronicle mcp install lm-studio</code></pre>
+<p>Writes <code>~/.lmstudio/mcp.json</code> (under <code>%USERPROFILE%</code> on Windows). Use a local model that supports tool calls.</p>
+
+<h3 id="zed">Zed</h3>
+<p>Print the snippet and add it under <code>context_servers</code> in Zed's settings (Zed: Open Settings):</p>
+<pre><code>chronicle mcp config zed</code></pre>
+
+<h3 id="continue">Continue</h3>
+<p>Add the printed block to <code>~/.continue/config.yaml</code>. MCP tools work in agent mode.</p>
+<pre><code>chronicle mcp config continue</code></pre>
+
+<h3 id="goose">Goose</h3>
+<p>Add the printed block to <code>~/.config/goose/config.yaml</code>, or run <code>goose configure</code> › Add Extension › Command-line extension with the command <code>chronicle mcp</code>.</p>
+<pre><code>chronicle mcp config goose</code></pre>
+
+<h2>Hosted agents and model APIs</h2>
+<p>These run on someone else's servers, so they need a public HTTPS URL. <code>chronicle serve</code> exposes MCP at <code>/mcp</code> (protocol versions 2025-06-18, 2025-03-26, and 2024-11-05). Set a token first: with <code>CHRONICLE_TOKEN</code> set, every route except the UI shell and <code>/health</code> requires it, and requests with a non-local <code>Origin</code> header are rejected.</p>
+<pre data-os="mac linux"><code>export CHRONICLE_TOKEN=$(openssl rand -hex 16)
+export CHRONICLE_PUBLIC_URL=https://&lt;your-tunnel-host&gt;
+chronicle serve &amp;
+cloudflared tunnel --url http://127.0.0.1:3030     # or ngrok, tailscale funnel
+echo "$CHRONICLE_PUBLIC_URL/mcp/$CHRONICLE_TOKEN"</code></pre>
+<pre data-os="win"><code>$env:CHRONICLE_TOKEN = -join ((1..32) | ForEach-Object { '{0:x}' -f (Get-Random -Max 16) })
+$env:CHRONICLE_PUBLIC_URL = "https://&lt;your-tunnel-host&gt;"
+Start-Process chronicle serve
+cloudflared tunnel --url http://127.0.0.1:3030
+"$env:CHRONICLE_PUBLIC_URL/mcp/$env:CHRONICLE_TOKEN"</code></pre>
+<p class="note">Anyone with that URL can read your Chronicle data. Stop the tunnel when you're done, and rotate the token if the URL leaks. Clients that support headers can use <code>/mcp</code> with <code>Authorization: Bearer $CHRONICLE_TOKEN</code> instead.</p>
+
+<h3 id="chatgpt">ChatGPT</h3>
+<ol>
+  <li>Start the server and tunnel as above.</li>
+  <li>In ChatGPT, open Settings › Connectors › Advanced and turn on Developer mode.</li>
+  <li>Create a connector with the URL <code>https://&lt;tunnel&gt;/mcp/&lt;token&gt;</code> and no authentication.</li>
+</ol>
+<p>The <code>search</code> and <code>fetch</code> tools return the shapes that connectors and deep research expect. ChatGPT's app directory only lists hosted servers, so this per-user route is the supported one.</p>
+
+<h3 id="openai-api">OpenAI Responses API</h3>
+<pre><code>from openai import OpenAI
+
+client = OpenAI()
+response = client.responses.create(
+    model="gpt-5",
+    tools=[{"type": "mcp", "server_label": "chronicle", "server_url": URL, "require_approval": "never"}],
+    input="Use get_context for the task 'file this week's expense report', then tell me the steps.",
+)
+print(response.output_text)</code></pre>
+<p>A fuller script is in <a href="https://github.com/aniketxdey/chronicle/blob/main/examples/openai_responses.py"><code>examples/openai_responses.py</code></a>.</p>
+
+<h3 id="anthropic-api">Anthropic Messages API</h3>
+<p>Use the MCP connector beta alongside the computer-use tool, so Claude reads context before it clicks. <a href="https://github.com/aniketxdey/chronicle/blob/main/examples/anthropic_computer_use.py"><code>examples/anthropic_computer_use.py</code></a> shows the first turn.</p>
+<pre><code>response = client.beta.messages.create(
+    model="claude-sonnet-4-5",
+    max_tokens=2048,
+    betas=["mcp-client-2025-04-04"],
+    mcp_servers=[{"type": "url", "url": URL, "name": "chronicle"}],
+    messages=[{"role": "user", "content": "Call get_context for 'reply to the Acme thread' and summarize what I need."}],
+)</code></pre>
+
+<h3 id="gemini-api">Gemini API</h3>
+<p>The <code>google-genai</code> SDK accepts an MCP session as a tool and calls it automatically, so Gemini can use the local stdio server with no tunnel. <code>chronicle mcp config gemini-api</code> prints a complete script; install <code>google-genai</code> and <code>mcp</code> first.</p>
+
+<h3 id="http">Any Streamable HTTP client</h3>
+<pre><code>curl -s "$URL" -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'</code></pre>
+
+<h3 id="other">Any other client</h3>
+<pre><code>{ "mcpServers": { "chronicle": { "command": "chronicle", "args": ["mcp"] } } }</code></pre>
+<p>Clients that read the official MCP Registry can search for <code>io.github.aniketxdey/chronicle</code>. To inspect the server by hand: <code>npx @modelcontextprotocol/inspector --cli chronicle mcp --method tools/list</code>.</p>
+<p class="note">Provider model names and beta flags change often. Treat the API snippets as starting points and check the provider's MCP docs.</p>
+</main>
+
+<footer><div>Chronicle is MIT licensed. <a href="https://github.com/aniketxdey/chronicle/issues">Report an issue</a>.</div></footer>
+<script src="site.js"></script>
+</body>
+</html>
