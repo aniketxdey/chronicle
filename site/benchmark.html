@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chronicle benchmark</title>
+<link rel="icon" href="assets/icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top"><div class="top-inner">
+  <a class="brand" href="./"><img src="assets/icon.png" alt="">Chronicle</a>
+  <nav>
+    <a href="install.html">Install</a>
+    <a href="clients.html">Connect an agent</a>
+    <a href="guide.html">Guide</a>
+    <a class="on" href="benchmark.html">Benchmark</a>
+  </nav>
+  <a class="gh" href="https://github.com/aniketxdey/chronicle">GitHub</a>
+</div></header>
+
+<main>
+<h1>Benchmark</h1>
+<p class="note">In progress. The evaluation below is designed and its harness is in the repository, but no results have been run yet. This page will report them, including null or negative results, when they exist.</p>
+
+<p class="lede">The question is whether a computer-use agent completes more tasks when it can query a knowledge graph of its own earlier work than the same model without it, and whether the graph matters or just having history does.</p>
+
+<h2>Benchmarks</h2>
+<table>
+  <tr><th>Benchmark</th><th>Why</th></tr>
+  <tr><td><a href="https://arxiv.org/abs/2606.29537">OSWorld 2.0</a></td><td>108 long workflows in Ubuntu VMs with self-hosted services. 43 of them are tagged implicit-state inference: the agent has to recover state the instruction doesn't give it, which is the problem Chronicle is built for.</td></tr>
+  <tr><td>OSWorld-Verified</td><td>369 shorter desktop tasks, each from a fresh VM. Chronicle has no user history here, so any gain has to come from experience across tasks. This is the harder test for Chronicle.</td></tr>
+</table>
+
+<h2>How the graph is built</h2>
+<p>The protocol follows the online setting of <a href="https://arxiv.org/abs/2409.07429">Agent Workflow Memory</a>. Tasks run once, in a fixed shuffled order that every arm shares. After each task, the agent's own observations and actions from that task are pushed into Chronicle through <code>POST /add</code> and its graph is rebuilt. Later tasks can query everything recorded so far.</p>
+<ul>
+  <li>Chronicle never sees benchmark evaluator results, reference solutions, or human demonstrations of the test tasks.</li>
+  <li>The agent's runs are recorded whether they succeeded or failed, as they would be on a real machine.</li>
+  <li>Chronicle tool calls count against the same step budget and are included in token cost.</li>
+</ul>
+
+<h2>Arms</h2>
+<table>
+  <tr><th>Arm</th><th>Agent gets</th></tr>
+  <tr><td>Raw model</td><td>The benchmark's standard observation and action space</td></tr>
+  <tr><td>Plain memory</td><td>The same recordings, but only full-text search over them (<code>search_history</code>)</td></tr>
+  <tr><td>Chronicle</td><td>The full tool set: <code>get_context</code>, graph queries, search, and frames</td></tr>
+</table>
+<p>The plain-memory arm separates the value of the graph from the value of having any history at all.</p>
+
+<h2>Reporting</h2>
+<p>Results will give binary success and, for OSWorld 2.0, partial score per arm, with paired bootstrap confidence intervals and an exact McNemar test on the same tasks. They will also report steps, tokens, and dollar cost per task, results split by phenomenon and by position in the task order, and the model version and dates. The first run is a pilot on one model with a subset of tasks, and it will be labeled as a pilot.</p>
+<p>The full protocol, including what counts as leakage and how the task subset is chosen, is in <a href="https://github.com/aniketxdey/chronicle/blob/main/bench/PROTOCOL.md"><code>bench/PROTOCOL.md</code></a>.</p>
+</main>
+
+<footer><div>Chronicle is MIT licensed. <a href="https://github.com/aniketxdey/chronicle/issues">Report an issue</a>.</div></footer>
+<script src="site.js"></script>
+</body>
+</html>
