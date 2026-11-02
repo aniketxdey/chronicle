@@ -76,6 +76,21 @@ OpenAI's Plugins Directory only accepts apps that run as a public HTTPS server. 
 
 A directory listing would need a hosted relay. That means a small public service with OAuth, where each user's machine keeps an outbound connection and ChatGPT reaches it through the relay. This is a product decision (it means running a service that sees user traffic) and is not built.
 
+## Other directories
+
+Most MCP directories copy from the official registry, so they need nothing beyond the release. Glama, mcp.directory, and GitHub's MCP registry import it within a few days. PulseMCP does too, but it paused new submissions in September 2026 and will pick Chronicle up when it reopens. The rest need a manual submission after the registry entry is live:
+
+| Directory | How to submit | Cost |
+| --- | --- | --- |
+| [cursor.directory](https://cursor.directory) | Sign in with GitHub and submit the repo URL | free |
+| [MCP Market](https://mcpmarket.com) | Submit the repo URL | free (4 to 6 week queue) or $29 for 24 hours |
+| [mcpservers.org](https://mcpservers.org) | Web form; also feeds `wong2/awesome-mcp-servers` | free or $39 |
+| [mcp.so](https://mcp.so) | Enter the repo URL and check the details it fills in | $39 |
+| [LobeHub](https://lobehub.com/mcp) | Sign in and submit from the MCP marketplace | free |
+| [punkpeye/awesome-mcp-servers](https://github.com/punkpeye/awesome-mcp-servers) | One-line PR in its format, after the Glama listing exists | free |
+
+Glama listings under a personal account can be claimed from the listing page. Leave out the Docker MCP Catalog, because a container can't see the host screen and would only serve an empty database, and Smithery, whose directory changed hands when its proxy shut down.
+
 ## Windows
 
 Windows agents read the On-Device Agent Registry, which is managed with `odr.exe`. Once the server is in the MCP Registry, register it with `odr.exe` using `server.json`, following Microsoft's current "MCP on Windows" docs because the tool is still in preview. Capture on Windows is best effort, so test `chronicle doctor` there first.
