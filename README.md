@@ -274,7 +274,7 @@ npx @modelcontextprotocol/inspector --cli chronicle mcp --method tools/list
 | `mcp_server.py`, `clients.py` | JSON-RPC core, stdio transport, and per-client setup |
 | `main.py`, `web/` | HTTP server and UI |
 
-Releases are described in [docs/PUBLISHING.md](https://github.com/aniketxdey/chronicle/blob/main/docs/PUBLISHING.md).
+Releases are described in [docs/PUBLISHING.md](https://github.com/aniketxdey/chronicle/blob/main/docs/PUBLISHING.md). The OSWorld benchmark harness is in `bench/`, and [bench/PROTOCOL.md](https://github.com/aniketxdey/chronicle/blob/main/bench/PROTOCOL.md) describes the evaluation. It hasn't been run yet, so there are no results.
 
 ## License
 

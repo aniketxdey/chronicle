@@ -36,18 +36,18 @@
 <p>The protocol follows the online setting of <a href="https://arxiv.org/abs/2409.07429">Agent Workflow Memory</a>. Tasks run once, in a fixed shuffled order that every arm shares. After each task, the agent's own observations and actions from that task are pushed into Chronicle through <code>POST /add</code> and its graph is rebuilt. Later tasks can query everything recorded so far.</p>
 <ul>
   <li>Chronicle never sees benchmark evaluator results, reference solutions, or human demonstrations of the test tasks.</li>
-  <li>The agent's runs are recorded whether they succeeded or failed, as they would be on a real machine.</li>
-  <li>Chronicle tool calls count against the same step budget and are included in token cost.</li>
+  <li>The agent's runs are recorded whether they succeeded or failed, as they would be on a real machine. Its actions and reasoning are not recorded, matching Chronicle, which never records keystrokes.</li>
+  <li>All three arms run the same recorder, so per-step latency is equal, and the injected context counts toward each arm's token cost.</li>
 </ul>
 
 <h2>Arms</h2>
 <table>
   <tr><th>Arm</th><th>Agent gets</th></tr>
   <tr><td>Raw model</td><td>The benchmark's standard observation and action space</td></tr>
-  <tr><td>Plain memory</td><td>The same recordings, but only full-text search over them (<code>search_history</code>)</td></tr>
-  <tr><td>Chronicle</td><td>The full tool set: <code>get_context</code>, graph queries, search, and frames</td></tr>
+  <tr><td>Plain memory</td><td>The recorded frames that best match the task, ranked by BM25 over the same recordings</td></tr>
+  <tr><td>Chronicle</td><td>The <code>get_context</code> pack for the task: knowledge graph, timeline, and cited evidence</td></tr>
 </table>
-<p>The plain-memory arm separates the value of the graph from the value of having any history at all.</p>
+<p>Both memory arms get the same preamble and the same 8,000-character budget, added to the instruction at the start of each task. The plain-memory arm separates the value of the graph from the value of having any history at all. Letting the agent call Chronicle's tools itself is a later experiment.</p>
 
 <h2>Reporting</h2>
 <p>Results will give binary success and, for OSWorld 2.0, partial score per arm, with paired bootstrap confidence intervals and an exact McNemar test on the same tasks. They will also report steps, tokens, and dollar cost per task, results split by phenomenon and by position in the task order, and the model version and dates. The first run is a pilot on one model with a subset of tasks, and it will be labeled as a pilot.</p>
