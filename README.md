@@ -1,4 +1,4 @@
-![](docs/assets/headline.png)
+![Chronicle knowledge graph view of the sample workday](https://raw.githubusercontent.com/aniketxdey/chronicle/main/docs/assets/headline.png)
 
 *The all-history knowledge graph for the synthetic sample workday that `chronicle demo` loads. No real screen data is shown.*
 
@@ -131,8 +131,8 @@ cloudflared tunnel --url http://127.0.0.1:3030    # or ngrok, tailscale funnel
 With a token set, every route except the UI shell and `/health` requires it. Open the UI once with `?token=…` and it remembers the token. Requests with a non-local `Origin` header are rejected.
 
 - **ChatGPT** (Settings › Connectors › Developer mode › Create): paste the `/mcp/<token>` URL with no authentication. The `search` and `fetch` tools return the shapes that connectors and deep research expect.
-- **OpenAI Responses API:** `tools=[{"type": "mcp", "server_label": "chronicle", "server_url": URL, "require_approval": "never"}]`. See [`examples/openai_responses.py`](examples/openai_responses.py).
-- **Anthropic Messages API** (MCP connector beta `mcp-client-2025-04-04`): `mcp_servers=[{"type": "url", "url": URL, "name": "chronicle"}]`, alongside the computer-use tool. See [`examples/anthropic_computer_use.py`](examples/anthropic_computer_use.py).
+- **OpenAI Responses API:** `tools=[{"type": "mcp", "server_label": "chronicle", "server_url": URL, "require_approval": "never"}]`. See [`examples/openai_responses.py`](https://github.com/aniketxdey/chronicle/blob/main/examples/openai_responses.py).
+- **Anthropic Messages API** (MCP connector beta `mcp-client-2025-04-04`): `mcp_servers=[{"type": "url", "url": URL, "name": "chronicle"}]`, alongside the computer-use tool. See [`examples/anthropic_computer_use.py`](https://github.com/aniketxdey/chronicle/blob/main/examples/anthropic_computer_use.py).
 - **Gemini API** (`google-genai`): pass an MCP `ClientSession` connected to `chronicle mcp` as a tool. `chronicle mcp config gemini-api` prints the snippet.
 - **Anything else:** `chronicle mcp config http` prints a `curl` call.
 
@@ -252,7 +252,7 @@ Recordings, screenshots, and the graph stay in `CHRONICLE_HOME`. Data leaves the
 - **LLM refinement:** when it's enabled, window titles, URLs, and redacted screen text are sent to OpenAI.
 - **Ask:** `chronicle ask` and the Ask box send the matching history to the provider you configure in Settings.
 
-[PRIVACY.md](PRIVACY.md) has the details.
+[PRIVACY.md](https://github.com/aniketxdey/chronicle/blob/main/PRIVACY.md) has the details.
 
 ## Development
 
@@ -274,7 +274,7 @@ npx @modelcontextprotocol/inspector --cli chronicle mcp --method tools/list
 | `mcp_server.py`, `clients.py` | JSON-RPC core, stdio transport, and per-client setup |
 | `main.py`, `web/` | HTTP server and UI |
 
-Releases are described in [docs/PUBLISHING.md](docs/PUBLISHING.md).
+Releases are described in [docs/PUBLISHING.md](https://github.com/aniketxdey/chronicle/blob/main/docs/PUBLISHING.md).
 
 ## License
 
