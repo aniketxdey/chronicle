@@ -27,7 +27,7 @@ Data leaves the folder only through tools you connect:
 
 - **MCP clients.** An agent you connect (Claude, ChatGPT, Gemini, Cursor, or another client) receives the tool results it asks for, such as a context pack, search results, or a screenshot. That client and its model provider then handle the data under their own privacy policies. Chronicle has no control over what they keep.
 - **The HTTP server.** `chronicle serve` listens on `127.0.0.1` unless you pass another `--host`. If you expose it through a tunnel, anyone with the URL and your token can read your data. Set `CHRONICLE_TOKEN` before doing so.
-- **Optional model passes.** Features that send window titles or screen text to a language model are off by default and run only against a provider and API key you configure yourself.
+- **Optional model passes.** Graph refinement and context-file writing send window titles, URLs, and redacted screen text to OpenAI. They run only when an OpenAI key is available, from `OPENAI_API_KEY` or a key you save in Settings, and you can switch them off under Settings > LLM refinement or with `CHRONICLE_LLM=off`. Without a key, nothing is sent.
 
 ## Children
 
