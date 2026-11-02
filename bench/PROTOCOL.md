@@ -73,8 +73,11 @@ With 20 and 60 tasks, the pilot can only detect large effects, and its results w
 
 Requirements: an OSWorld-V2 checkout at the release tag with its tasks and assets downloaded (the task and asset datasets on Hugging Face are gated, so request access first), the provider set up as in its `docs/PROVIDER_SETUP.md` (AWS for this pilot), `ANTHROPIC_API_KEY`, and `tesseract` on the harness host for the OCR fallback.
 
+Run `run_pilot.py` from a Python that has Chronicle's graph extras, because it ingests each wave with its own interpreter and Chronicle quietly builds a weaker graph (no task segmentation or fuzzy node merging) without scikit-learn and scipy. OSWorld's own environment, which reads the context during a wave, already includes them.
+
 ```bash
 # from this repository's root
+uv venv && uv pip install -e ".[graph]" && source .venv/bin/activate
 python bench/run_pilot.py --osworld ~/OSWorld-V2 --meta evaluation_examples/test_v2.json \
   --only evaluation_examples/implicit_state_inference.json \
   --select 20 --seed 0 --out bench/runs/v2-pilot --dry-run          # writes plan.json and prints the commands
