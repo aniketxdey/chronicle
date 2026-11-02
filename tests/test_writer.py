@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from chronicle import contexts, db, llm
@@ -93,7 +95,8 @@ def test_writer_falls_back_without_a_model(client, writer):
     writer(Writer(llm.LLMError("HTTP 401: bad key")))
     failed = client.get("/contexts/file", params={"preset": "writing"}).json()
     assert failed["written_by"] is None and failed["writer_note"] == "HTTP 401: bad key"
-    assert failed["markdown"] == plain["markdown"]
+    generated = re.compile(r"Generated .* local time\.")
+    assert generated.sub("", failed["markdown"]) == generated.sub("", plain["markdown"])
     assert "HTTP 401" in client.get("/llm/status").json()["last_error"]
 
     fake = writer(Writer())
