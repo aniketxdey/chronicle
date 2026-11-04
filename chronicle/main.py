@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from chronicle import __version__, capture, clients, content, context, contexts, db, graph, llm, mcp_server, meetings, pipes, search, seed, sessions, tuner, workflows
+from chronicle import __version__, artifacts, capture, clients, content, context, contexts, db, graph, llm, harness, mcp_server, meetings, search, seed, sessions, tuner, workflows
 from chronicle import ask as ask_mod
 from chronicle.timeutil import parse_time, utc_iso
 
@@ -29,7 +29,6 @@ LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "[::1]"}
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     seed.ensure()
-    workflows.refresh()
     stop = asyncio.Event()
     tasks = []
     recorder = None
@@ -48,8 +47,6 @@ async def lifespan(_app: FastAPI):
 async def _jobs(stop: asyncio.Event) -> None:
     while not stop.is_set():
         try:
-            for name in pipes.due_names():
-                await asyncio.to_thread(pipes.execute_sync, name)
             pruned = await asyncio.to_thread(db.enforce_retention)
             if not pruned["skipped"] and (pruned["frames"] or pruned["audio"] or pruned["events"] or pruned["meetings"]):
                 await asyncio.to_thread(graph.forget, "0000", pruned["cutoff"])
@@ -124,6 +121,66 @@ class SqlBody(BaseModel):
 
 class AskBody(BaseModel):
     question: str
+    session_id: int | None = None
+    history: list[dict] | None = None
+
+
+class ContextComposeBody(BaseModel):
+    name: str
+    description: str = ""
+    session_ids: list[int] = Field(default_factory=list)
+    context_ids: list[int] = Field(default_factory=list)
+    workflow_ids: list[int] = Field(default_factory=list)
+
+
+class LLMProviderBody(BaseModel):
+    api_key: str | None = None
+    clear_key: bool = False
+    model: str | None = None
+    base_url: str | None = None
+    activate: bool = False
+
+
+class HarnessDesignBody(BaseModel):
+    name: str = ""
+    purpose: str = ""
+    session_ids: list[int] = Field(default_factory=list)
+
+
+class HarnessBody(BaseModel):
+    name: str
+    purpose: str = ""
+    session_ids: list[int] = Field(default_factory=list)
+    context_ids: list[int] = Field(default_factory=list)
+    workflow_ids: list[int] = Field(default_factory=list)
+    new_workflows: list[dict] = Field(default_factory=list)
+
+
+class HarnessUpdateBody(BaseModel):
+    name: str | None = None
+    purpose: str | None = None
+    session_ids: list[int] | None = None
+
+
+class HarnessFileBody(BaseModel):
+    path: str
+    content: str
+
+
+class HarnessNewFileBody(BaseModel):
+    kind: str
+    title: str
+
+
+class HarnessChatBody(BaseModel):
+    message: str
+
+
+class WorkflowBody(BaseModel):
+    name: str | None = None
+    purpose: str | None = None
+    session_ids: list[int] = Field(default_factory=list)
+    context_ids: list[int] = Field(default_factory=list)
 
 
 class MemoryBody(BaseModel):
@@ -170,28 +227,10 @@ class SettingsBody(BaseModel):
     capture_ocr: bool | None = None
     idle_threshold_secs: int | None = None
     graph_half_life_hours: float | None = Field(default=None, ge=0, description="0 disables decay")
-    ai_base_url: str | None = None
-    ai_model: str | None = None
-    ai_api_key: str | None = None
     llm_provider: str | None = None
     llm_model: str | None = None
-
-
-class PipeInstallBody(BaseModel):
-    name: str | None = None
-    source: str | None = None
-    schedule: str | None = None
-    prompt: str | None = None
-    description: str | None = None
-
-
-class PipeEnableBody(BaseModel):
-    enabled: bool = True
-
-
-class PipeConfigBody(BaseModel):
-    schedule: str | None = None
-    prompt: str | None = None
+    llm_base_url: str | None = None
+    llm_api_key: str | None = None
 
 
 class SessionBody(BaseModel):
@@ -264,6 +303,13 @@ def health():
 # Recording sessions
 
 
+def _session_artifacts(session_id: int) -> dict:
+    return {
+        "contexts": [item for item in contexts.list_saved(500) if item["session_id"] == session_id],
+        "workflows": [item for item in workflows.list_workflows() if session_id in item["sources"]["session_ids"]],
+    }
+
+
 @app.get("/sessions")
 def list_sessions(limit: int = 50):
     return {"data": sessions.list_sessions(limit)}
@@ -285,6 +331,24 @@ def active_session():
 @app.get("/sessions/{session_id}")
 def get_session(session_id: int):
     return sessions.get(session_id)
+
+
+@app.get("/sessions/{session_id}/stats")
+def session_stats(session_id: int):
+    return sessions.stats(session_id)
+
+
+@app.get("/sessions/{session_id}/artifacts")
+def session_artifacts(session_id: int):
+    sessions.get(session_id)
+    return _session_artifacts(session_id)
+
+
+@app.post("/sessions/{session_id}/generate")
+def session_generate(session_id: int):
+    made = contexts.generate_for_recording(session_id)
+    found = workflows.generate(session_ids=[session_id]) if llm.enabled() else {"created": 0, "status": "ok"}
+    return {"contexts_created": len(made), "workflows_created": found["created"], "workflow_error": found.get("error"), **_session_artifacts(session_id)}
 
 
 @app.post("/sessions/{session_id}/stop")
@@ -371,11 +435,6 @@ def get_context(task: str | None = None, minutes: int | None = None, session_id:
     return pack
 
 
-@app.get("/overview")
-def overview(days: int = 7):
-    return contexts.overview(max(1, min(days, 90)))
-
-
 @app.get("/contexts")
 def list_contexts(limit: int = 100):
     return {"data": contexts.list_saved(limit), "presets": contexts.presets()}
@@ -386,9 +445,14 @@ def create_context(body: ContextBody):
     return contexts.create(body.task, body.preset, body.session_id, body.minutes, body.title)
 
 
+@app.post("/contexts/compose")
+def compose_context(body: ContextComposeBody):
+    return contexts.compose(body.name, body.description, body.session_ids, body.context_ids, body.workflow_ids)
+
+
 @app.get("/contexts/presets")
 def context_presets():
-    return {"data": contexts.presets(), "formats": list(contexts.FORMATS)}
+    return {"data": contexts.presets()}
 
 
 @app.get("/contexts/detail")
@@ -403,27 +467,47 @@ def context_search(q: str = "", session_id: int | None = None, start: str | None
     return contexts.find(q, session_id, _parse(start), _parse(end), minutes, max(1, min(limit, 100)))
 
 
-@app.get("/contexts/file")
-def context_file(preset: str | None = None, session_id: int | None = None, context_id: int | None = None,
-                 minutes: int | None = None, task: str | None = None):
-    return contexts.file(preset, session_id, context_id, minutes, task)
-
-
 @app.get("/llm/status")
 def llm_status():
     return llm.status()
 
 
-@app.get("/contexts/export")
-def context_export(format: str = "md", preset: str | None = None, session_id: int | None = None,
-                   context_id: int | None = None, minutes: int | None = None, task: str | None = None):
-    name, media_type, body = contexts.export(format, preset, session_id, context_id, minutes, task)
-    return Response(body, media_type=media_type, headers={"Content-Disposition": f'attachment; filename="{name}"'})
+@app.get("/llm/models")
+def llm_models(provider: str = "local"):
+    return llm.list_models(provider)
+
+
+@app.post("/llm/test")
+def llm_test(provider: str | None = None):
+    return llm.test_connection(provider)
+
+
+@app.post("/llm/providers/{provider}")
+def llm_save_provider(provider: str, body: LLMProviderBody):
+    if provider not in llm.PROVIDERS:
+        raise db.ChronicleError(f"unknown provider {provider!r}", 404)
+    if body.api_key is not None and body.api_key.strip():
+        db.set_setting(f"llm_api_key_{provider}", body.api_key.strip())
+    if body.clear_key:
+        db.set_setting(f"llm_api_key_{provider}", "")
+    if body.model is not None:
+        db.set_setting(f"llm_model_{provider}", body.model.strip())
+    if body.base_url is not None and provider == "local":
+        db.set_setting("llm_base_url", body.base_url.strip())
+    if body.activate:
+        db.set_setting("llm_provider", provider)
+    return llm.status()
 
 
 @app.get("/contexts/{context_id}")
 def get_saved_context(context_id: int):
     return contexts.get(context_id)
+
+
+@app.get("/contexts/{context_id}/document")
+def context_document(context_id: int):
+    item = contexts.get(context_id)
+    return _attachment(f"{artifacts.file_stem(item)}.md", "text/markdown; charset=utf-8", artifacts.context_document(item))
 
 
 @app.delete("/contexts/{context_id}")
@@ -442,6 +526,11 @@ def list_clients():
 @app.get("/clients/{client_id}")
 def client_config(client_id: str):
     return clients.config(client_id)
+
+
+@app.post("/clients/{client_id}/uninstall")
+def uninstall_client(client_id: str):
+    return clients.uninstall(client_id)
 
 
 @app.post("/clients/{client_id}/install")
@@ -670,77 +759,124 @@ def delete_range(body: RangeBody):
     if end < start:
         raise db.ChronicleError("end_time is before start_time")
     deleted = db.delete_range(start, end)
-    workflows.refresh()
     graph.forget(start, end)
     return deleted
 
 
-@app.get("/pipes")
-def list_pipes():
-    return pipes.list_pipes()
-
-
-@app.post("/pipes/install")
-def install_pipe(body: PipeInstallBody):
-    return pipes.install(body.model_dump())
-
-
-@app.post("/pipes/{name}/run")
-def run_pipe(name: str):
-    return pipes.execute_sync(name)
-
-
-@app.post("/pipes/{name}/enable")
-def enable_pipe(name: str, body: PipeEnableBody):
-    return pipes.set_enabled(name, body.enabled)
-
-
-@app.post("/pipes/{name}/config")
-def config_pipe(name: str, body: PipeConfigBody):
-    return pipes.configure(name, body.schedule, body.prompt)
-
-
-@app.get("/pipes/{name}/logs")
-def pipe_logs(name: str):
-    return pipes.logs(name)
-
-
-@app.post("/pipes/{name}/stop")
-def stop_pipe(name: str):
-    with db.conn() as connection:
-        connection.execute(
-            "UPDATE pipe_executions SET status = 'stopped', finished_at = ? WHERE pipe_name = ? AND status = 'running'",
-            (utc_iso(), name),
-        )
-    return pipes.logs(name)
+def _attachment(name: str, media_type: str, body: str | bytes) -> Response:
+    return Response(content=body, media_type=media_type, headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 @app.get("/workflows")
 def list_workflows():
-    data = workflows.list_workflows()
-    if not data:
-        data = workflows.refresh()
-    return {"data": data}
+    return {"data": workflows.list_workflows()}
 
 
-@app.post("/workflows/refresh")
-def refresh_workflows():
-    return {"data": workflows.refresh()}
+@app.post("/workflows/generate")
+def generate_workflows(body: WorkflowBody):
+    return workflows.generate(body.name, body.purpose, body.session_ids, body.context_ids)
 
 
-@app.post("/workflows/{workflow_id}/install-pipe")
-def install_workflow_pipe(workflow_id: int):
-    return pipes.create_from_workflow(workflow_id)
+@app.get("/workflows/{workflow_id}")
+def get_workflow(workflow_id: int):
+    return workflows.get_workflow(workflow_id)
+
+
+@app.delete("/workflows/{workflow_id}")
+def delete_workflow(workflow_id: int):
+    return workflows.delete(workflow_id)
+
+
+@app.get("/workflows/{workflow_id}/document")
+def workflow_document(workflow_id: int):
+    item = workflows.get_workflow(workflow_id)
+    return _attachment(f"{artifacts.file_stem(item)}.md", "text/markdown; charset=utf-8", artifacts.workflow_document(item))
+
+
+@app.get("/graph/download/{kind}")
+@app.get("/graph/download/{kind}/{item_id}")
+def graph_download(kind: str, item_id: int | None = None, format: str = "json"):
+    return _attachment(*artifacts.graph_download(kind, item_id, format))
+
+
+@app.get("/harnesses")
+def list_harnesses():
+    return {"data": harness.list_harnesses()}
+
+
+@app.post("/harnesses")
+def create_harness(body: HarnessBody):
+    return harness.create(body.name, body.purpose, body.session_ids, body.context_ids, body.workflow_ids, body.new_workflows)
+
+
+@app.post("/harnesses/suggest")
+def suggest_harness(body: HarnessDesignBody):
+    return harness.suggest(body.name, body.purpose, body.session_ids)
+
+
+@app.get("/harnesses/{harness_id}")
+def get_harness(harness_id: int):
+    return harness.get(harness_id)
+
+
+@app.put("/harnesses/{harness_id}")
+def update_harness(harness_id: int, body: HarnessUpdateBody):
+    return harness.update(harness_id, body.name, body.purpose, body.session_ids)
+
+
+@app.delete("/harnesses/{harness_id}")
+def delete_harness(harness_id: int):
+    return harness.delete(harness_id)
+
+
+@app.put("/harnesses/{harness_id}/file")
+def save_harness_file(harness_id: int, body: HarnessFileBody):
+    return harness.save_file(harness_id, body.path, body.content)
+
+
+@app.post("/harnesses/{harness_id}/file")
+def new_harness_file(harness_id: int, body: HarnessNewFileBody):
+    return harness.new_file(harness_id, body.kind, body.title)
+
+
+@app.delete("/harnesses/{harness_id}/file")
+def delete_harness_file(harness_id: int, path: str):
+    return harness.delete_file(harness_id, path)
+
+
+@app.post("/harnesses/{harness_id}/chat")
+def harness_chat(harness_id: int, body: HarnessChatBody):
+    return harness.chat(harness_id, body.message)
+
+
+@app.post("/harnesses/{harness_id}/undo")
+def undo_harness(harness_id: int):
+    return harness.undo(harness_id)
+
+
+@app.get("/harnesses/{harness_id}/engine")
+def harness_engine(harness_id: int):
+    return harness.engine(harness_id)
+
+
+@app.get("/harnesses/{harness_id}/engine/search")
+def harness_engine_search(harness_id: int, q: str = ""):
+    return harness.engine_search(harness_id, q)
+
+
+@app.get("/harnesses/{harness_id}/export")
+def harness_export(harness_id: int, format: str = "zip"):
+    return _attachment(*harness.export(harness_id, format))
 
 
 @app.post("/ask")
 def ask(body: AskBody):
-    return ask_mod.prepare(body.question)
+    return ask_mod.prepare(body.question, body.session_id, body.history)
 
 
 @app.post("/ask/stream")
 async def ask_stream(body: AskBody):
-    result = await asyncio.to_thread(ask_mod.prepare, body.question)
+    result = await asyncio.to_thread(ask_mod.prepare, body.question, body.session_id, body.history)
 
     async def generate():
         for chunk in result["chunks"]:
@@ -750,14 +886,9 @@ async def ask_stream(body: AskBody):
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
-@app.get("/ai/status")
-def ai_status():
-    return ask_mod.ai_status()
-
-
 SETTING_KEYS = [
     "onboarded", "timezone", "retention_days", "redact", "capture_interval_secs", "capture_clipboard",
-    "capture_screenshots", "capture_ocr", "idle_threshold_secs", "graph_half_life_hours", "ai_base_url", "ai_model", "llm_provider", "llm_model",
+    "capture_screenshots", "capture_ocr", "idle_threshold_secs", "graph_half_life_hours", "llm_provider", "llm_model", "llm_base_url",
 ]
 BOOL_KEYS = {"onboarded", "redact", "capture_clipboard", "capture_screenshots", "capture_ocr"}
 
@@ -767,7 +898,6 @@ def get_settings():
     payload = {key: db.get_setting(key) for key in SETTING_KEYS}
     for key in BOOL_KEYS:
         payload[key] = payload[key] == "1"
-    payload["ai_api_key_set"] = bool(db.get_setting("ai_api_key", ""))
     payload["ocr_available"] = shutil.which("tesseract") is not None
     payload["home"] = str(db.home())
     payload["capture"] = capture.status()
@@ -777,6 +907,14 @@ def get_settings():
 @app.post("/settings")
 def update_settings(body: SettingsBody):
     values = body.model_dump(exclude_none=True)
+    key = values.pop("llm_api_key", None)
+    if key is not None:
+        provider = values.get("llm_provider") or db.get_setting("llm_provider", "")
+        if provider not in llm.PROVIDERS:
+            raise db.ChronicleError("choose a provider before saving a key")
+        values[f"llm_api_key_{provider}"] = key
+    if values.get("llm_model") is not None and (values.get("llm_provider") or db.get_setting("llm_provider", "")) in llm.PROVIDERS:
+        values[f"llm_model_{values.get('llm_provider') or db.get_setting('llm_provider', '')}"] = values.pop("llm_model")
     if "capture_interval_secs" in values:
         values["capture_interval_secs"] = max(1, min(600, values["capture_interval_secs"]))
     if "idle_threshold_secs" in values:
@@ -793,14 +931,14 @@ def load_demo(replace: bool = False):
     if replace:
         if sessions.active_id():
             raise db.ChronicleError("stop the recording before replacing history with the sample", 409)
-        keep = {key: db.get_setting(key) for key in ("onboarded", "timezone", "ai_base_url", "ai_model", "ai_api_key", "redact", "retention_days")}
+        keep = {key: db.get_setting(key) for key in ("onboarded", "timezone", "ai_base_url", "ai_model", "ai_api_key", "redact", "retention_days",
+                                                  "llm_provider", "llm_model", "llm_base_url", *(f"llm_{part}_{item['id']}" for item in llm.CATALOG for part in ("api_key", "model")))}
         db.wipe()
         seed.ensure()
         for key, value in keep.items():
             if value is not None:
                 db.set_setting(key, value)
     loaded = seed.load_sample()
-    workflows.refresh()
     return {"loaded": loaded, "frames": db.counts()["frames"]}
 
 

@@ -3,40 +3,31 @@ import json
 from chronicle import contexts
 
 
-def test_presets_and_overview(client):
+def test_presets(client):
     presets = client.get("/contexts/presets").json()
     assert {"general", "data-analysis", "job-applications"} <= {item["id"] for item in presets["data"]}
-    assert set(presets["formats"]) == {"md", "json", "graphml", "cypher"}
-    body = client.get("/overview").json()
-    assert len(body["days"]) == 7 and len(body["daily"]) == 7
-    assert body["totals"]["frames"] > 0
-    assert isinstance(body["sessions"], list)
 
 
 def test_generate_save_and_download(client):
     made = client.post("/contexts", json={"task": "finish the Acme export", "preset": "data-analysis"}).json()
     assert made["preset"] == "data-analysis"
-    assert made["markdown"].startswith("# Data analysis context")
+    assert made["markdown"].startswith("# finish the Acme export")
     assert "Task: finish the Acme export" in made["markdown"]
     assert any(item["id"] == made["id"] for item in client.get("/contexts").json()["data"])
 
-    saved = client.get("/contexts/export", params={"context_id": made["id"]})
-    assert saved.status_code == 200
-    assert saved.text == made["markdown"]
-    assert "attachment" in saved.headers["content-disposition"]
+    saved = client.get(f"/contexts/{made['id']}/document")
+    assert saved.status_code == 200 and "attachment" in saved.headers["content-disposition"]
+    assert made["markdown"].strip() in saved.text and saved.text.startswith("---\n")
+    assert made["graph"]["nodes"] and "## Knowledge graph" in saved.text
 
-    jobs = client.get("/contexts/export", params={"context_id": made["id"], "preset": "job-applications"})
-    assert jobs.text.startswith("# Applying to jobs context")
-
-    payload = json.loads(client.get("/contexts/export", params={"format": "json"}).text)
-    assert payload["graph"]["nodes"] and "markdown" in payload["context"]
-    graphml = client.get("/contexts/export", params={"format": "graphml"}).text
+    payload = json.loads(client.get(f"/graph/download/context/{made['id']}").text)
+    assert payload["nodes"]
+    graphml = client.get("/graph/download/recording", params={"format": "graphml"}).text
     assert graphml.startswith("<?xml") and "<node id=" in graphml and "<edge " in graphml
-    cypher = client.get("/contexts/export", params={"format": "cypher"}).text
+    cypher = client.get("/graph/download/recording", params={"format": "cypher"}).text
     assert "MERGE (n:Entity" in cypher and "MERGE (a)-[r:" in cypher
-
-    assert client.get("/contexts/export", params={"format": "pdf"}).status_code == 400
-    assert client.get("/contexts/export", params={"preset": "nope"}).status_code == 400
+    assert client.get("/graph/download/recording", params={"format": "pdf"}).status_code == 400
+    assert client.post("/contexts", json={"preset": "nope"}).status_code == 400
 
     assert client.delete(f"/contexts/{made['id']}").status_code == 200
     assert client.get(f"/contexts/{made['id']}").status_code == 404

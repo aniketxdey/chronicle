@@ -1,15 +1,16 @@
 # Assets
 
-`headline.png` is the Contexts > All history > Knowledge graph view, captured from a throwaway instance that holds only the synthetic sample workday. Capture and the LLM are off, so no real screen data or model output is involved. To refresh it from the repository root:
+`gifs/` and `screens/` show the app on the synthetic sample workday, never real screen data. They were recorded with Playwright's CDP screencast from a throwaway instance:
 
 ```bash
-export CHRONICLE_HOME=/tmp/chr-headline CHRONICLE_DISABLE_CAPTURE=1 CHRONICLE_LLM=off
-rm -rf "$CHRONICLE_HOME"
-chronicle demo
-python -c "from chronicle import db; db.set_setting('onboarded', '1')"
-chronicle serve --port 3060 &
-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --hide-scrollbars \
-  --user-data-dir="$CHRONICLE_HOME/chrome" --window-size=1400,830 --virtual-time-budget=10000 \
-  --screenshot=docs/assets/headline.png "http://127.0.0.1:3060/#contexts/all/graph"
-kill %1
+export CHRONICLE_HOME=/tmp/chronicle-assets CHRONICLE_DISABLE_JOBS=1 CHRONICLE_DISABLE_CAPTURE=1 CHRONICLE_DEMO=1
+python -m uvicorn chronicle.main:app --port 3060
+```
+
+The time spent waiting on a model is cut from the GIFs. Everything else plays at real speed. The recording in `record.gif` is fed synthetic frames through `POST /add`, so it never captures a real screen.
+
+GIFs are encoded with:
+
+```bash
+ffmpeg -i clip.mp4 -vf "fps=10,scale=1000:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=200:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle" clip.gif
 ```

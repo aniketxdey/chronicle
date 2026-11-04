@@ -2,7 +2,7 @@
 
 The `chronicle` MCP server records this computer's screen and system events locally and keeps a knowledge graph of apps, windows, pages, search queries, topics, files, tickets, people, projects, and tasks. Every fact links back to the frames it came from.
 
-- Before acting on the user's computer, or when the user refers to something they saw, searched, opened, or worked on, call `get_context` with the task in the user's words.
+- Before acting on the user's computer, or when the user refers to something they saw, searched, opened, or worked on, call `get_context` with the task in the user's words, and a `preset` when one fits the work, such as `coding` or `job-applications`. Follow the instructions at the top of a preset pack.
 - To find something specific, call `query_graph`, then `get_entity` on the best match.
 - For "earlier" or "this morning", call `list_tasks` or `search_history` with a time range.
 - When the screen layout matters, call `get_frame` with `include_image=true`.

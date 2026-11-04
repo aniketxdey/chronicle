@@ -19,15 +19,18 @@ import sys
 import threading
 import traceback
 
-from chronicle import __version__, context, db, graph, meetings, search, sessions, tuner
+from chronicle import __version__, artifacts, context, contexts, db, graph, harness, meetings, search, sessions, tuner, workflows
 from chronicle.timeutil import parse_time
 
 PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"]
 SERVER_INFO = {"name": "chronicle", "title": "Chronicle", "version": __version__}
 INSTRUCTIONS = (
     "Chronicle records this computer's screen and system events and keeps a knowledge graph of the apps, "
-    "windows, pages, files, tickets, people, and projects involved. Call get_context first, with the task you "
-    "are about to do, to see what is on screen and what the user has been working on. Use get_frame with "
+    "windows, pages, files, tickets, people, and projects involved. Each recording yields context files and workflows, and the user builds them into "
+    "harnesses. Call list_harnesses first. If one fits the work, read its AGENTS.md with get_harness, follow the files it points to with read_harness_file, "
+    "and query its knowledge graph with search_harness_graph. Context files and workflows can also be used alone with get_context_file and get_workflow. "
+    "Call get_context, with a preset when one fits, "
+    "to see what is on screen now. Use get_graph for the graph behind any of them. Use get_frame with "
     "include_image=true when you need to look at a screenshot. Use list_tasks for a timeline of what the user was doing. Use start_recording to capture a demonstration "
     "for a preset amount of time, then get_context(session_id=...) to learn from it."
 )
@@ -47,6 +50,59 @@ READ = {"readOnlyHint": True, "openWorldHint": False}
 
 TOOLS = [
     {
+        "name": "list_harnesses",
+        "title": "List harnesses",
+        "description": "The agent harnesses the user has built from their recordings, each for a line of work. Call this first.",
+        "inputSchema": _schema({}),
+        "annotations": {**READ, "title": "List harnesses"},
+    },
+    {
+        "name": "get_harness",
+        "title": "Get harness",
+        "description": "One harness: its AGENTS.md, which says how to use it, and the list of its files.",
+        "inputSchema": _schema({"id": {"type": "integer"}}, ["id"]),
+        "annotations": {**READ, "title": "Get harness"},
+    },
+    {
+        "name": "read_harness_file",
+        "title": "Read harness file",
+        "description": "One file in a harness: AGENTS.md, a context file, or a workflow, with its small knowledge graph as text.",
+        "inputSchema": _schema({"id": {"type": "integer"}, "path": {"type": "string", "description": "A path from get_harness, like contexts/researching-companies.md."}}, ["id", "path"]),
+        "annotations": {**READ, "title": "Read harness file"},
+    },
+    {
+        "name": "search_harness_graph",
+        "title": "Search harness graph",
+        "description": "Search a harness's knowledge graph engine: entities across its recordings, and the low-level system events that mention the words.",
+        "inputSchema": _schema({"id": {"type": "integer"}, "query": {"type": "string"}}, ["id", "query"]),
+        "annotations": {**READ, "title": "Search harness graph"},
+    },
+    {
+        "name": "get_context_file",
+        "title": "Get context file",
+        "description": "One context file: standing instructions for this kind of work, the workflows it refers to, and its knowledge graph as text.",
+        "inputSchema": _schema({"id": {"type": "integer"}}, ["id"]),
+        "annotations": {**READ, "title": "Get context file"},
+    },
+    {
+        "name": "get_workflow",
+        "title": "Get workflow",
+        "description": "One workflow: when to run it, its inputs, the steps in order, what to confirm with the person first, and its knowledge graph as text.",
+        "inputSchema": _schema({"id": {"type": "integer"}}, ["id"]),
+        "annotations": {**READ, "title": "Get workflow"},
+    },
+    {
+        "name": "get_graph",
+        "title": "Get knowledge graph",
+        "description": "The knowledge graph of a recording, context file, or workflow, as nodes and edges in JSON or readable text.",
+        "inputSchema": _schema({
+            "kind": {"type": "string", "enum": ["recording", "context", "workflow"]},
+            "id": {"type": "integer", "description": "The recording, context file, or workflow id. Omit with kind recording for all history."},
+            "format": {"type": "string", "enum": ["md", "json"], "description": "Default md, which uses fewer tokens."},
+        }, ["kind"]),
+        "annotations": {**READ, "title": "Get knowledge graph"},
+    },
+    {
         "name": "get_context",
         "title": "Get computer context",
         "description": (
@@ -58,6 +114,15 @@ TOOLS = [
             "minutes": {"type": "integer", "description": "Only consider the last N minutes."},
             "session_id": SESSION_ID,
             "max_nodes": {"type": "integer", "description": "Graph nodes to include (4-80, default 24)."},
+            "preset": {
+                "type": "string",
+                "enum": [item["id"] for item in contexts.PRESETS],
+                "description": (
+                    "The kind of work, when one fits: "
+                    + ", ".join(f"{item['id']} ({item['title']})" for item in contexts.PRESETS)
+                    + ". Focuses the pack on that work and opens it with instructions to follow."
+                ),
+            },
         }),
         "annotations": {**READ, "title": "Get computer context"},
     },
@@ -168,10 +233,37 @@ TOOLS = [
         "annotations": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False, "title": "Rebuild graph"},
     },
     {
+        "name": "graph_review",
+        "title": "Review graph for curation",
+        "description": (
+            "One batch of the knowledge graph with the rules and op schemas for curating it yourself. Use with graph_apply "
+            "when the user wants their graph organized, including when Chronicle has no model of its own."
+        ),
+        "inputSchema": _schema({
+            "session_id": SESSION_ID,
+            "batch": {"type": "integer", "description": "Batch to read, from 0. The reply says how many there are."},
+        }),
+        "annotations": {**READ, "title": "Review graph for curation"},
+    },
+    {
+        "name": "graph_apply",
+        "title": "Apply graph curation",
+        "description": "Apply curation ops from graph_review to the local graph. Each op is checked, rejected ops come back with the reason, and tune_graph with reset=true removes them all.",
+        "inputSchema": _schema({
+            "session_id": SESSION_ID,
+            "ops": {
+                "type": "array",
+                "description": "Ops as {name, arguments}, using the schemas graph_review returns.",
+                "items": {"type": "object", "properties": {"name": {"type": "string"}, "arguments": {"type": "object"}}, "required": ["name", "arguments"]},
+            },
+        }, required=["ops"]),
+        "annotations": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False, "title": "Apply graph curation"},
+    },
+    {
         "name": "tune_graph",
         "title": "Tune graph with an LLM",
         "description": (
-            "Have the configured LLM (CHRONICLE_LLM=openai) review the heuristic graph and patch it: add real-world "
+            "Have the configured LLM (see Settings > Model or CHRONICLE_LLM) review the heuristic graph and patch it: add real-world "
             "entities, typed relations, and activity summaries, merge duplicates, clean labels, drop noise. Patches "
             "survive rebuilds; reset=true removes them. Off unless an LLM provider is configured."
         ),
@@ -215,6 +307,12 @@ RESOURCES = [
      "description": "All recording sessions.", "mimeType": "application/json"},
 ]
 RESOURCE_TEMPLATES = [
+    {"uriTemplate": "chronicle://harness/{id}", "name": "harness", "title": "Harness",
+     "description": "One harness's AGENTS.md and its list of files.", "mimeType": "text/markdown"},
+    {"uriTemplate": "chronicle://context-file/{id}", "name": "context-file", "title": "Context file",
+     "description": "One context file with its knowledge graph.", "mimeType": "text/markdown"},
+    {"uriTemplate": "chronicle://workflow/{id}", "name": "workflow", "title": "Workflow",
+     "description": "One step-by-step workflow with its knowledge graph.", "mimeType": "text/markdown"},
     {"uriTemplate": "chronicle://context/session/{session_id}", "name": "session-context", "title": "Context for a recording",
      "description": "The context pack for one recording session.", "mimeType": "text/markdown"},
     {"uriTemplate": "chronicle://frame/{frame_id}", "name": "frame", "title": "Captured frame",
@@ -259,12 +357,37 @@ def _frame_payload(frame_id: int) -> dict:
 
 def call_tool(name: str, args: dict) -> list[dict]:
     args = args or {}
+    if name == "list_harnesses":
+        return [_text([{k: item[k] for k in ("id", "name", "purpose", "contexts", "workflows", "session_ids")} for item in harness.list_harnesses()])]
+    if name == "get_harness":
+        return [_text(harness.overview(int(args["id"])))]
+    if name == "read_harness_file":
+        return [_text(harness.read_file(int(args["id"]), str(args["path"])))]
+    if name == "search_harness_graph":
+        return [_text(harness.engine_search(int(args["id"]), str(args["query"])))]
+    if name == "get_context_file":
+        return [_text(artifacts.context_document(contexts.get(int(args["id"]))))]
+    if name == "get_workflow":
+        return [_text(artifacts.workflow_document(workflows.get_workflow(int(args["id"]))))]
+    if name == "get_graph":
+        return [_text(artifacts.graph_download(args["kind"], _int(args.get("id")), args.get("format") or "md")[2])]
     if name == "get_context":
+        if args.get("preset"):
+            # The calling agent is the model here, so the pack isn't rewritten by a second one.
+            pack = contexts.build(
+                task=args.get("task"), preset_id=args["preset"], session_id=_int(args.get("session_id")),
+                minutes=_int(args.get("minutes")), write=False, max_nodes=_int(args.get("max_nodes"), 24),
+            )
+            return [_text(pack["markdown"])]
         pack = context.build(
             task=args.get("task"), minutes=_int(args.get("minutes")), session_id=_int(args.get("session_id")),
             max_nodes=_int(args.get("max_nodes"), 24),
         )
         return [_text(pack["markdown"])]
+    if name == "graph_review":
+        return [_text(json.dumps(tuner.review(_int(args.get("session_id")), batch=_int(args.get("batch"), 0)), ensure_ascii=False))]
+    if name == "graph_apply":
+        return [_text(json.dumps(tuner.apply_ops(_int(args.get("session_id")), args.get("ops") or []), ensure_ascii=False))]
     if name == "search_history":
         found = search.query(
             q=args.get("query"), content_type=args.get("content_type") or "all", app_name=args.get("app_name"),
@@ -403,6 +526,12 @@ def connector_fetch(ident: str) -> dict:
 
 
 def read_resource(uri: str) -> dict:
+    if uri.startswith("chronicle://harness/"):
+        return {"uri": uri, "mimeType": "text/markdown", "text": harness.overview(int(uri.rsplit("/", 1)[1]))}
+    if uri.startswith("chronicle://context-file/"):
+        return {"uri": uri, "mimeType": "text/markdown", "text": artifacts.context_document(contexts.get(int(uri.rsplit("/", 1)[1])))}
+    if uri.startswith("chronicle://workflow/"):
+        return {"uri": uri, "mimeType": "text/markdown", "text": artifacts.workflow_document(workflows.get_workflow(int(uri.rsplit("/", 1)[1])))}
     if uri == "chronicle://context/current":
         return {"uri": uri, "mimeType": "text/markdown", "text": context.build()["markdown"]}
     if uri == "chronicle://graph/summary":
@@ -423,7 +552,7 @@ def get_prompt(name: str, args: dict) -> dict:
         task = args.get("task") or "the task"
         text = (
             f"Before working on: {task}\n"
-            "1. Call get_context with this task.\n"
+            "1. Call get_context with this task, and the preset that fits the work if one does.\n"
             "2. If the context names a frame that matters, call get_frame with include_image=true.\n"
             "3. Use query_graph or get_entity to resolve names, tickets, files, and pages before acting.\n"
             "4. Then do the task, citing frame ids for anything you learned from history."

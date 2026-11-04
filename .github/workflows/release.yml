@@ -1,6 +1,6 @@
 name: Release
 
-# Push a tag such as v0.2.0 after bumping every version (tests/test_packaging.py checks they match).
+# Push a tag such as v0.3.0 after bumping every version (tests/test_packaging.py checks they match).
 on:
   push:
     tags: ["v*"]

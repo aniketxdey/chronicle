@@ -1,18 +1,18 @@
 ![Chronicle knowledge graph view of the sample workday](https://raw.githubusercontent.com/aniketxdey/chronicle/main/docs/assets/headline.png)
 
-*The all-history knowledge graph for the synthetic sample workday that `chronicle demo` loads. No real screen data is shown.*
+*A recording open on its knowledge graph, using the synthetic sample workday that `chronicle demo` loads. No real screen data is shown.*
 
 # Chronicle
 
 <!-- mcp-name: io.github.aniketxdey/chronicle -->
 
-Chronicle records your screen and system events, turns them into a knowledge graph, and serves that graph to LLM agents over MCP.
+Chronicle records your screen and system events on your machine, writes context files and workflows from them, and builds them into agent harnesses that plug into any AI over MCP. Full documentation is at [aniketxdey.github.io/chronicle](https://aniketxdey.github.io/chronicle/docs.html).
 
 Agents usually start every task knowing nothing about your computer. They don't know which ticket you were on, which file you had open, or what you looked up ten minutes ago. So you end up pasting context in by hand. Chronicle keeps that memory locally and lets the agent ask for it:
 
 - **Pick up where you left off.** "Finish the Acme export" works because the agent can see you were editing `export.ts`, that PR 882 is waiting on review, and what the export spec in Notion said.
 - **Teach by showing.** Record yourself doing a task once, and the agent gets the apps, pages, and steps in order so it can repeat it.
-- **Hand context to tools that don't speak MCP.** Export a recording as a Markdown context file, JSON, GraphML, or Cypher for ChatGPT or Claude Projects, NotebookLM, Neo4j, or a RAG pipeline.
+- **Hand it to tools that don't speak MCP.** Download a harness as a zip or one Markdown file for ChatGPT or Claude Projects, NotebookLM, Neo4j, or a RAG pipeline.
 
 Everything is stored in one local folder (`~/.chronicle`), with no account and no telemetry. The only data that leaves the machine goes to model providers you give a key to (see [Privacy](#privacy)).
 
@@ -142,17 +142,20 @@ Provider model names and beta flags change often, so treat these snippets as sta
 
 | Tool | What it does |
 | --- | --- |
-| `get_context` | Context pack for a task: current screen, recent activity and events, transitions, relevant subgraph, cited frames |
+| `get_context` | Context pack for a task: current screen, recent activity and events, transitions, relevant subgraph, cited frames. An optional `preset` (such as `coding` or `job-applications`) focuses it on that work and opens it with instructions to follow |
 | `search_history` | Full-text search over screen text, events, transcripts, and memories |
 | `query_graph` / `get_entity` / `graph_summary` | Find entities, walk their neighbors with evidence frames, and get counts and top transitions |
 | `list_tasks` | Timeline of tasks, segmented from activity and grouped by topic |
 | `get_frame` | One frame with nearby events and audio; `include_image=true` attaches the screenshot |
+| `list_harnesses` / `get_harness` / `read_harness_file` / `search_harness_graph` | Use a harness: its AGENTS.md, its files, and its graph engine |
+| `get_context_file` / `get_workflow` / `get_graph` | Use one context file, workflow, or graph on its own |
 | `start_recording` / `stop_recording` / `list_sessions` | Let the agent record a demonstration for a set duration |
 | `rebuild_graph` / `activity_summary` / `list_meetings` | Maintenance and summaries |
 | `tune_graph` | Run the LLM refinement pass on a scope |
+| `graph_review` / `graph_apply` | Let the connected agent curate the graph itself, with no separate model or API key |
 | `search` / `fetch` | ChatGPT connector and deep-research interface |
 
-Resources: `chronicle://context/current`, `chronicle://graph/summary`, `chronicle://sessions`, and the templates `chronicle://context/session/{id}` and `chronicle://frame/{id}`.
+Resources: `chronicle://context/current`, `chronicle://graph/summary`, `chronicle://sessions`, and the templates `chronicle://harness/{id}`, `chronicle://context-file/{id}`, `chronicle://workflow/{id}`, `chronicle://context/session/{id}`, and `chronicle://frame/{id}`.
 
 Prompts: `use_my_computer_context(task)`, and `learn_from_recording(session_id)`, which turns a recorded demonstration into steps an agent can repeat:
 
@@ -167,10 +170,10 @@ Then ask the agent: *"Use the learn_from_recording prompt for session 1 and do i
 
 `chronicle serve` runs the UI at `http://127.0.0.1:3030`:
 
-- **Home:** recent recordings with their top apps, tasks, and topics, plus time per app over the last week.
-- **Record:** start a timed recording and see what this machine can capture.
-- **Contexts:** each recording, all history, or a new context generated from a task, time range, or recording. A context shows context files for eight kinds of work (general, data analysis, job applications, coding, research, writing, meeting follow-up, customer work), meetings, the knowledge graph, a timeline of frames and events, and search.
-- **Workflows:** repeated loops found across recordings, and scheduled pipes.
+- **Recordings:** start a recording, then open any of them. Each one opens on its knowledge graph with a chat beneath it. A model writes its context files and workflows when it ends.
+- **Harnesses:** agent setups built from your own work. A harness is general ("Recruiting") and holds context files, workflows, and a knowledge graph engine merged from the recordings you pick. Design one in steps, then edit it in an IDE-style view, by hand or by chat with your model.
+- **Contexts:** general instructions for one kind of session, like "Researching job companies". Each has its own small graph and works alone or inside a harness.
+- **Workflows:** short, action-oriented procedures for one job, like "Customize resume bullets to keep their length". Each has a trigger, inputs, steps, what to confirm first, and its own small graph.
 - **Integrations:** MCP client setup and file exports.
 
 The REST API is documented at `http://127.0.0.1:3030/docs`. The most useful routes:
@@ -181,6 +184,14 @@ The REST API is documented at `http://127.0.0.1:3030/docs`. The most useful rout
 | `GET /context?task=&format=markdown` | The `get_context` pack |
 | `GET /graph`, `GET /graph/node?id=` | Graph and single-node lookups |
 | `GET /contexts/file?preset=…` | A context file, plus which model wrote it |
+| `POST /contexts/compose` | Write one context file from the recordings, earlier contexts, and workflows you pick |
+| `POST /workflows/generate` | Have the model write workflows from the recordings and context files you pick |
+| `POST /harnesses` | Build a harness from recordings, context files, and workflows |
+| `POST /harnesses/{id}/chat` | Edit a harness by chat with your model |
+| `GET /harnesses/{id}/export` | Download a harness as a zip or one Markdown file |
+| `GET /graph/download/{recording,context,workflow}/{id}` | One knowledge graph as JSON, text, GraphML, or Cypher |
+| `POST /clients/{id}/install` / `uninstall` | Connect or disconnect a local client |
+| `GET /sessions/{id}/stats` | Live storage, frame, event, page, and app totals for a recording |
 | `GET /contexts/export?format=md\|json\|graphml\|cypher` | Exports |
 | `POST /add` | Push frames, events, or transcripts from your own capture, such as a Whisper audio pipeline |
 
@@ -203,21 +214,24 @@ chronicle search <q> · chronicle ask <question> · chronicle status · chronicl
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `CHRONICLE_HOME` | `~/.chronicle` | Database, screenshots, pipes, and lock file |
+| `CHRONICLE_HOME` | `~/.chronicle` | Database, screenshots, and lock file |
 | `CHRONICLE_TOKEN` | unset | Require this token on the HTTP API and MCP |
 | `CHRONICLE_PUBLIC_URL` | `http://127.0.0.1:3030` | Base URL for links and remote client snippets |
 | `CHRONICLE_DEMO=1` | off | Load the sample workday into an empty database on start |
 | `CHRONICLE_DISABLE_CAPTURE=1` | off | Never record from this process |
 | `CHRONICLE_HALF_LIFE_HOURS` | `72` | Decay half-life for the all-history graph; `0` or `off` disables it |
-| `CHRONICLE_LLM` | unset (automatic) | `openai` or `off`. Unset means on whenever an OpenAI key is available |
-| `CHRONICLE_LLM_MODEL` | `gpt-4.1-mini` | Model for graph refinement and context files |
+| `CHRONICLE_LLM` | unset (automatic) | `openai`, `anthropic`, `gemini`, `openrouter`, `local`, or `off`. Unset uses the first provider with a key. Settings › Model beats it, except `off`, which always keeps models off |
+| `CHRONICLE_LLM_MODEL` | `gpt-4.1-mini` / `claude-sonnet-5-5` | Model for graph refinement, context files, and Ask. Required for `local` |
 | `OPENAI_API_KEY` / `OPENAI_BASE_URL` | unset / OpenAI | Credentials and endpoint for the `openai` provider |
+| `ANTHROPIC_API_KEY` | unset | Credentials for the `anthropic` provider |
+| `GEMINI_API_KEY` / `OPENROUTER_API_KEY` | unset | Credentials for the `gemini` and `openrouter` providers |
+| `CHRONICLE_LLM_BASE_URL` | `http://localhost:11434/v1` | OpenAI-compatible endpoint for the `local` provider |
 
 Capture interval, idle threshold, screenshots, OCR, clipboard, redaction, and retention are settings, edited in the UI or through `POST /settings`. Two settings mirror environment variables: `graph_half_life_hours` overrides `CHRONICLE_HALF_LIFE_HOURS`, while `CHRONICLE_LLM` takes precedence over `llm_provider`.
 
 ## LLM refinement
 
-The heuristic graph knows apps, pages, tickets, files, and identifiers, but it can't tell that "Crusoe" is a company or that a page is a job posting. When an OpenAI key is available, a model refines the graph and writes the context files. Without a key, Chronicle runs fully offline: the graph stays heuristic and context files are assembled from the recording directly.
+The heuristic graph knows apps, pages, tickets, files, and identifiers, but it can't tell that "Crusoe" is a company or that a page is a job posting. When a model is set up, it names the graph's nodes, works out what you did from system events and pages, and writes the context files. Set one up under Settings › Model with an OpenAI or Anthropic key, or point it at a local server such as Ollama or LM Studio. Without one, Chronicle runs fully offline: the graph stays heuristic and context files are assembled from the recording directly.
 
 ```bash
 uv tool install "chronicle-context[graph,llm]"
@@ -226,9 +240,9 @@ chronicle graph tune --session 1    # runs automatically when a recording ends
 chronicle graph show --session 1    # activities and typed relations are listed first
 ```
 
-The key can also come from the environment, a `.env` in the current directory, or an OpenAI key saved in Settings for Ask. A `.env` never overrides variables that are already set. Settings › LLM refinement or `CHRONICLE_LLM=off` turns refinement off. `GET /llm/status` reports the provider and model in use and the last error.
+The key can also come from the environment or a `.env` in the current directory. A `.env` never overrides variables that are already set. Settings › Model or `CHRONICLE_LLM=off` turns the model off. `GET /llm/status` reports the provider and model in use and the last error.
 
-**Graph patches.** The model reads the heaviest nodes along with their evidence: window titles, URLs and search queries, redacted screen text, and dwell time. It replies through strict function calls: `add_entity`, `retype_node`, `rename_node`, `merge_nodes`, `add_relation`, `add_trait`, `set_activity`, and `drop_node`. `add_relation` supports `is_a`, `part_of`, `works_on`, `competes_with`, `located_in`, `researching`, `mentions`, `listed_in`, `uses`, and `related_to`.
+**Graph patches.** The model reads the heaviest nodes along with their evidence: window titles, URLs and search queries, redacted screen text, and dwell time. It replies through strict function calls: `add_entity`, `retype_node`, `rename_node`, `merge_nodes`, `add_relation`, `add_trait`, `record_action`, `drop_action`, `set_activity`, and `drop_node`. A final pass over every named node merges what separate batches named twice. Actions must cite real frames and carry a status (completed, worked on, discussed, or viewed), because a screen shows state, not what you did. Actions and the system events behind them are kept inside each node, so the graph shows named things and the detail stays one click away. `add_relation` supports `is_a`, `part_of`, `works_on`, `competes_with`, `located_in`, `researching`, `mentions`, `listed_in`, `uses`, and `related_to`.
 
 - Each op is validated against the schema and the node ids that exist at that point. Rejected ops go back to the model in the next round. A run makes up to `--rounds` passes (default 2) and stops early when nothing new is proposed.
 - Accepted ops are stored in `kg_llm_patches` and replayed after every rebuild, so refinement survives `graph build`. `--reset` removes them.

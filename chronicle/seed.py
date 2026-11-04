@@ -312,51 +312,6 @@ EVENTS = [
 ]
 
 
-PIPES = [
-    {
-        "name": "daily-standup",
-        "schedule": "every 1h",
-        "enabled": True,
-        "description": "Turn Slack standup and nearby decisions into notes.",
-        "prompt": """Write standup notes from screen text and meeting audio in the scheduled window.
-Group by person when a speaker name is known.
-End with open questions and due dates.
-Do not include passwords, tokens, or customer email addresses.""",
-    },
-    {
-        "name": "meeting-notes",
-        "schedule": "daily 17:00",
-        "enabled": True,
-        "description": "Summarize the latest meeting and the follow-ups that were actually said.",
-        "prompt": """Summarize meetings in the window.
-List decisions, owners, and due dates.
-Quote the speaker when the line came from audio.
-If the window has no meeting, say so instead of inventing one.""",
-    },
-    {
-        "name": "workflow-digest",
-        "schedule": "every 1d",
-        "enabled": False,
-        "description": "List repeated work that is worth turning into a pipe.",
-        "prompt": """Read the detected workflows and write a short digest of work worth automating.
-Prefer loops that already repeat. Do not propose an automation you cannot ground in a frame or a meeting.""",
-    },
-    {
-        "name": "obsidian-journal",
-        "schedule": "daily 18:00",
-        "enabled": False,
-        "description": "Write a local markdown journal. A vault sync app is not connected.",
-        "prompt": """Write a daily journal from today's screen and audio.
-Save it as markdown. Keep it concrete: apps, decisions, and open loops.""",
-    },
-]
-
-
-def _pipe_md(schedule: str, enabled: bool, prompt: str) -> str:
-    flag = "true" if enabled else "false"
-    return f"---\nschedule: {schedule}\nenabled: {flag}\n---\n\n{prompt.strip()}\n"
-
-
 def _load() -> None:
     for scene in SCENES:
         stamp = clock(scene["h"], scene["m"])
@@ -409,25 +364,6 @@ def _load() -> None:
             "INSERT INTO tags(content_type, content_id, tag) VALUES ('memory', ?, 'project:billing')",
             (memory["id"],),
         )
-        now = utc_iso()
-        for pipe in PIPES:
-            folder = db.pipes_root() / pipe["name"]
-            folder.mkdir(parents=True, exist_ok=True)
-            (folder / "pipe.md").write_text(_pipe_md(pipe["schedule"], pipe["enabled"], pipe["prompt"]))
-            connection.execute(
-                """
-                INSERT INTO pipes(name, schedule, enabled, prompt, description, source, last_run, created_at)
-                VALUES (?, ?, ?, ?, ?, 'builtin', NULL, ?)
-                """,
-                (
-                    pipe["name"],
-                    pipe["schedule"],
-                    1 if pipe["enabled"] else 0,
-                    pipe["prompt"],
-                    pipe["description"],
-                    now,
-                ),
-            )
 
 
 def content_memory() -> dict:
@@ -447,7 +383,6 @@ def ensure() -> None:
     db.init()
     if os.environ.get("CHRONICLE_DEMO") == "1":
         load_sample()
-    import_new_pipe_files()
 
 
 def load_sample() -> bool:
@@ -458,13 +393,17 @@ def load_sample() -> bool:
     if count:
         return False
     _load()
-    from chronicle import graph
+    with db.conn() as connection:
+        span = connection.execute("SELECT MIN(timestamp) AS first, MAX(timestamp) AS last FROM frames").fetchone()
+        session_id = connection.execute(
+            "INSERT INTO sessions(label, status, started_at, stopped_at, interval_secs) VALUES ('Sample workday', 'complete', ?, ?, 5)",
+            (span["first"], span["last"]),
+        ).lastrowid
+        connection.execute("UPDATE frames SET session_id = ?", (session_id,))
+        connection.execute("UPDATE ui_events SET session_id = ?", (session_id,))
+    from chronicle import graph, sessions
 
+    sessions.refresh_counts(session_id)
     graph.build()
+    graph.build(session_id)
     return True
-
-
-def import_new_pipe_files() -> None:
-    from chronicle.pipes import import_files
-
-    import_files()

@@ -30,4 +30,53 @@
     });
     pre.appendChild(button);
   });
+
+  const doc = document.getElementById("doc");
+  if (!doc) return;
+  const links = [...document.querySelectorAll(".side-group a")];
+  const sections = links.map((link) => document.getElementById(link.hash.slice(1))).filter(Boolean);
+  const toc = document.getElementById("toc");
+  const headings = [...doc.querySelectorAll("h2, h3")];
+  const slug = (text) => text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  headings.forEach((heading) => { if (!heading.id) heading.id = slug(heading.textContent); });
+
+  let current = null;
+  const paintToc = (section) => {
+    const start = headings.indexOf(section);
+    const rest = start < 0 ? [] : headings.slice(start + 1);
+    const end = rest.findIndex((heading) => heading.tagName === "H2");
+    const inner = end < 0 ? rest : rest.slice(0, end);
+    toc.parentElement.hidden = !inner.length;
+    toc.innerHTML = inner.map((heading) => `<a href="#${heading.id}">${heading.textContent}</a>`).join("");
+  };
+  const sync = () => {
+    const y = window.scrollY + 110;
+    const section = sections.filter((item) => item.offsetTop <= y).pop() || sections[0];
+    if (section !== current) {
+      current = section;
+      links.forEach((link) => {
+        const on = link.hash === `#${section.id}`;
+        link.classList.toggle("on", on);
+        if (on) link.scrollIntoView({ block: "nearest" });
+      });
+      paintToc(section);
+    }
+    const inner = [...toc.querySelectorAll("a")];
+    const active = inner.filter((link) => document.getElementById(link.hash.slice(1)).offsetTop <= y).pop();
+    inner.forEach((link) => link.classList.toggle("on", link === active));
+  };
+  window.addEventListener("scroll", sync, { passive: true });
+  sync();
+
+  const text = new Map(links.map((link) => {
+    const start = document.getElementById(link.hash.slice(1));
+    let words = start.textContent;
+    for (let node = start.nextElementSibling; node && node.tagName !== "H2"; node = node.nextElementSibling) words += ` ${node.textContent}`;
+    return [link, words.toLowerCase()];
+  }));
+  document.getElementById("doc-filter").addEventListener("input", (event) => {
+    const words = event.target.value.toLowerCase().split(/\s+/).filter(Boolean);
+    links.forEach((link) => { link.hidden = !words.every((word) => text.get(link).includes(word)); link.style.display = link.hidden ? "none" : ""; });
+    document.querySelectorAll(".side-group").forEach((group) => { const shown = [...group.querySelectorAll("a")].some((link) => !link.hidden); group.style.display = shown ? "" : "none"; });
+  });
 })();

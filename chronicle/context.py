@@ -174,7 +174,7 @@ def build(
             {"id": item["id"], "label": item["label"], "score": item.get("score", 0)}
             for item in sorted(summary["top"].get("topic", []), key=lambda item: -item.get("score", 0))
         ],
-        "llm": {"activities": summary["llm"]["activities"][:4], "relations": summary["llm"]["relations"][:12]},
+        "llm": {"activities": summary["llm"]["activities"][:4], "relations": summary["llm"]["relations"][:12], "actions": summary["llm"]["actions"][:24]},
         "graph": {
             "scope": sub["scope"],
             "seeds": sub["seeds"],
@@ -226,11 +226,17 @@ def render(pack: dict, labels: dict | None = None) -> str:
     else:
         lines += ["", "Nothing has been recorded yet. Start a recording with start_recording."]
     tuned = pack.get("llm") or {}
-    if tuned.get("activities") or tuned.get("relations"):
+    if tuned.get("activities") or tuned.get("relations") or tuned.get("actions"):
         lines += ["", "## What the user was doing (LLM-tuned graph)"]
         for item in tuned.get("activities", []):
             about = f" (involves {', '.join(item['nodes'][:4])})" if item["nodes"] else ""
             lines.append(f"- {item['summary']}{about}")
+        if tuned.get("actions"):
+            lines.append("Actions:")
+            for item in tuned["actions"]:
+                cited = f" (frame {', '.join(str(frame) for frame in item['frames'][:3])})" if item["frames"] else ""
+                status = f" [{item['status'].replace('_', ' ')}]" if item.get("status") else ""
+                lines.append(f"- {item['node']}: {item['text']}{status}{cited}")
         if tuned.get("relations"):
             lines.append("Typed relations:")
             for item in tuned["relations"]:

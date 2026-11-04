@@ -84,7 +84,8 @@ def _claude_code_args() -> list[str]:
     extra = []
     for key, value in server_env().items():
         extra += ["-e", f"{key}={value}"]
-    return ["claude", "mcp", "add", "--scope", "user", *extra, NAME, "--", command, *args]
+    # -e takes every word after it, so the server name has to come first.
+    return ["claude", "mcp", "add", NAME, "--scope", "user", *extra, "--", command, *args]
 
 
 CLIENTS: dict[str, dict] = {
@@ -111,6 +112,24 @@ CLIENTS: dict[str, dict] = {
 }
 
 
+def _connected(spec: dict, path: str | Path | None = None) -> bool | None:
+    """Whether this client's config holds Chronicle. None when Chronicle can't tell, such as remote clients."""
+    kind = spec["kind"]
+    try:
+        if kind == "cli":
+            data = json.loads((Path.home() / ".claude.json").read_text())
+            return NAME in (data.get("mcpServers") or {})
+        if kind == "json":
+            target = Path(path) if path else spec["path"]()
+            return target.exists() and NAME in (json.loads(target.read_text() or "{}").get(spec["key"]) or {})
+        if kind == "toml":
+            target = Path(path) if path else spec["path"]()
+            return target.exists() and f"[mcp_servers.{NAME}]" in target.read_text()
+    except (OSError, ValueError, AttributeError):
+        return False
+    return None
+
+
 def catalog() -> list[dict]:
     items = []
     for client_id, spec in CLIENTS.items():
@@ -122,6 +141,7 @@ def catalog() -> list[dict]:
             "installable": spec["kind"] in {"json", "toml"} or (spec["kind"] == "cli" and bool(shutil.which("claude"))),
             "config_path": str(path) if path else None,
             "detected": bool(path and path.parent.exists()) or (client_id == "claude-code" and bool(shutil.which("claude"))),
+            "connected": _connected(spec),
         })
     return items
 
@@ -283,6 +303,39 @@ def install(client_id: str, path: str | Path | None = None, dry_run: bool = Fals
         shutil.copy2(target, backup)
     target.write_text(text)
     return {"client": client_id, "path": str(target), "backup": str(backup) if backup else None, "restart": spec["label"]}
+
+
+def uninstall(client_id: str, path: str | Path | None = None) -> dict:
+    """Remove Chronicle from a client's config, leaving everything else alone and saving a backup."""
+    spec = CLIENTS.get(client_id)
+    if spec is None:
+        raise db.ChronicleError(f"unknown client {client_id!r}", 404)
+    kind = spec["kind"]
+    if kind == "cli":
+        if not shutil.which("claude"):
+            raise db.ChronicleError("the claude CLI is not on PATH", 400)
+        done = subprocess.run(["claude", "mcp", "remove", "--scope", "user", NAME], capture_output=True, text=True, check=False)
+        if done.returncode != 0:
+            raise db.ChronicleError((done.stderr or done.stdout).strip() or "claude mcp remove failed", 500)
+        return {"client": client_id, "removed": True, "restart": spec["label"]}
+    if kind not in {"json", "toml"}:
+        raise db.ChronicleError(f"{spec['label']} is configured by hand, so remove Chronicle from its settings there", 400)
+    target = Path(path) if path else spec["path"]()
+    if not _connected(spec, target):
+        return {"client": client_id, "removed": False, "path": str(target)}
+    if kind == "json":
+        try:
+            data = json.loads(target.read_text())
+        except json.JSONDecodeError as exc:
+            raise db.ChronicleError(f"{target} is not plain JSON ({exc}); remove Chronicle by hand", 400) from exc
+        data[spec["key"]].pop(NAME)
+        text = json.dumps(data, indent=2) + "\n"
+    else:
+        text = _merge_toml(target.read_text(), "").rstrip() + "\n"
+    backup = target.with_name(target.name + ".chronicle-backup")
+    shutil.copy2(target, backup)
+    target.write_text(text)
+    return {"client": client_id, "removed": True, "path": str(target), "backup": str(backup), "restart": spec["label"]}
 
 
 def _merge_toml(existing: str, block: str) -> str:

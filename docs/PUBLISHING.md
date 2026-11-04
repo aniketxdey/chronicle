@@ -27,10 +27,10 @@ Chronicle ships as one PyPI package, `chronicle-context`, and every listing poin
 1. Set the same version in `pyproject.toml`, `chronicle/__init__.py`, `server.json` (twice), `plugins/chronicle/.claude-plugin/plugin.json`, and `gemini-extension.json`. `tests/test_packaging.py` fails if they differ.
 2. Run `pytest`, commit, then tag and push:
    ```bash
-   git tag v0.2.0 && git push origin v0.2.0
+   git tag v0.3.0 && git push origin v0.3.0
    ```
 3. `.github/workflows/release.yml` runs the tests, builds, publishes to PyPI, waits for PyPI to serve the version, publishes `server.json` to the MCP Registry, and creates a GitHub release.
-4. Check `uvx chronicle-context@0.2.0 --help` and `curl "https://registry.modelcontextprotocol.io/v0/servers?search=chronicle"`.
+4. Check `uvx chronicle-context@0.3.0 --help` and `curl "https://registry.modelcontextprotocol.io/v0/servers?search=chronicle"`.
 
 To publish by hand instead: run `uv build && uv publish`, then `brew install mcp-publisher && mcp-publisher login github && mcp-publisher publish`.
 

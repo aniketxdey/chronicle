@@ -50,7 +50,7 @@ A short, true story of why you built it usually works better than the general fr
 
 ## Before launch day
 
-- [ ] `v0.2.0` (or later) is on PyPI and the MCP Registry, and `uvx chronicle-context@0.2.0 --help` works on a clean machine.
+- [ ] `v0.3.0` (or later) is on PyPI and the MCP Registry, and `uvx chronicle-context@0.3.0 --help` works on a clean machine.
 - [ ] The Pages site is live and every link on it resolves.
 - [ ] The Claude plugin and Gemini extension install from the commands on the site.
 - [ ] Schedule the launch in the Product Hunt form for 12:01 AM Pacific, so it gets the full day. Tuesday to Thursday has the most traffic and the most competition.

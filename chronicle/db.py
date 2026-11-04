@@ -109,28 +109,6 @@ CREATE TABLE IF NOT EXISTS tags (
     tag TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS pipes (
-    name TEXT PRIMARY KEY,
-    schedule TEXT,
-    enabled INTEGER DEFAULT 0,
-    prompt TEXT,
-    description TEXT,
-    source TEXT,
-    last_run TEXT,
-    created_at TEXT
-);
-
-CREATE TABLE IF NOT EXISTS pipe_executions (
-    id INTEGER PRIMARY KEY,
-    pipe_name TEXT,
-    started_at TEXT,
-    finished_at TEXT,
-    status TEXT,
-    stdout TEXT,
-    stderr TEXT,
-    output_path TEXT
-);
-
 CREATE TABLE IF NOT EXISTS workflows (
     id INTEGER PRIMARY KEY,
     title TEXT,
@@ -140,8 +118,6 @@ CREATE TABLE IF NOT EXISTS workflows (
     automation TEXT,
     minutes INTEGER,
     score REAL,
-    suggested_pipe TEXT,
-    pipe_prompt TEXT,
     first_seen TEXT,
     last_seen TEXT
 );
@@ -217,6 +193,46 @@ CREATE TABLE IF NOT EXISTS contexts (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS harnesses (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    purpose TEXT,
+    session_ids TEXT,
+    written_by TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS harness_files (
+    id INTEGER PRIMARY KEY,
+    harness_id INTEGER NOT NULL,
+    path TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    title TEXT,
+    content TEXT NOT NULL,
+    graph TEXT,
+    source_id INTEGER,
+    updated_at TEXT NOT NULL,
+    UNIQUE(harness_id, path)
+);
+
+CREATE TABLE IF NOT EXISTS harness_messages (
+    id INTEGER PRIMARY KEY,
+    harness_id INTEGER NOT NULL,
+    role TEXT NOT NULL,
+    text TEXT NOT NULL,
+    edits TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS harness_versions (
+    id INTEGER PRIMARY KEY,
+    harness_id INTEGER NOT NULL,
+    snapshot TEXT NOT NULL,
+    note TEXT,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS kg_llm_patches (
     id INTEGER PRIMARY KEY,
     scope TEXT NOT NULL,
@@ -249,6 +265,14 @@ CREATE INDEX IF NOT EXISTS idx_kg_llm_patches_scope ON kg_llm_patches(scope, id)
 """
 
 MIGRATIONS = [
+    ("workflows", "source", "TEXT"),
+    ("workflows", "spec", "TEXT"),
+    ("workflows", "graph", "TEXT"),
+    ("workflows", "sources", "TEXT"),
+    ("workflows", "created_at", "TEXT"),
+    ("contexts", "graph", "TEXT"),
+    ("contexts", "written_by", "TEXT"),
+    ("contexts", "sources", "TEXT"),
     ("frames", "session_id", "INTEGER"),
     ("ui_events", "session_id", "INTEGER"),
     ("kg_nodes", "eff_weight", "REAL"),
@@ -275,6 +299,10 @@ DEFAULTS = {
     "ai_api_key": "",
     "llm_provider": "",
     "llm_model": "",
+    "llm_base_url": "",
+    "llm_api_key_openai": "",
+    "llm_api_key_anthropic": "",
+    "llm_api_key_local": "",
     "last_llm_error": "",
     "last_capture_error": "",
     "last_capture_at": "",
@@ -299,18 +327,11 @@ def media_root() -> Path:
     return path
 
 
-def pipes_root() -> Path:
-    path = home() / "pipes"
-    path.mkdir(parents=True, exist_ok=True)
-    return path
-
-
 def get_conn() -> sqlite3.Connection:
     global _conn
     if _conn is None:
         home().mkdir(parents=True, exist_ok=True)
         media_root()
-        pipes_root()
         _conn = sqlite3.connect(home() / "db.sqlite", check_same_thread=False)
         _conn.row_factory = sqlite3.Row
         _conn.execute("PRAGMA journal_mode=WAL")
@@ -339,7 +360,6 @@ def conn():
 
 def init() -> None:
     media_root()
-    pipes_root()
     with conn() as connection:
         connection.executescript(SCHEMA)
         for table, column, kind in MIGRATIONS:
@@ -418,6 +438,7 @@ def wipe() -> None:
         if path.exists():
             path.unlink()
     media = root / "media"
+    # Older versions kept scheduled reports here.
     pipes = root / "pipes"
     exports = root / "exports"
     if media.exists():
@@ -450,7 +471,6 @@ def counts() -> dict:
             "audio_transcriptions": n("audio_transcriptions"),
             "meetings": n("meetings"),
             "memories": n("memories"),
-            "pipes": n("pipes"),
             "ui_events": n("ui_events"),
             "workflows": n("workflows"),
             "sessions": n("sessions"),

@@ -1,10 +1,10 @@
-"""History API: search, frames, meetings, pipes, retention, UI."""
+"""History API: search, frames, meetings, retention, UI."""
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from chronicle import seed
+from chronicle import db, seed
 from chronicle.timeutil import parse_duration, utc_iso
 
 
@@ -60,8 +60,6 @@ def test_tags_and_related(client):
 def test_ask_answers_from_history(client):
     answer = client.post("/ask", json={"question": "Where did we land on the Acme export columns?"}).json()
     assert "invoice_id" in answer["answer"] and answer["citations"]
-    meetings = client.post("/ask", json={"question": "Summarize my meetings"}).json()
-    assert "Friday" in meetings["answer"]
 
 
 def test_speaker_rename_and_meetings(client):
@@ -71,20 +69,11 @@ def test_speaker_rename_and_meetings(client):
     assert len(client.get("/meetings").json()["data"]) == 2
 
 
-def test_pipes_run_and_enable_without_caps(client):
-    run = client.post("/pipes/daily-standup/run").json()
-    assert run["status"] == "success"
-    for name in ("workflow-digest", "obsidian-journal", "daily-standup", "time-breakdown"):
-        enabled = client.post(f"/pipes/{name}/enable", json={"enabled": True})
-        assert enabled.status_code in (200, 404)
-    assert client.get("/pipes/daily-standup/logs").json()["executions"]
-
-
-def test_workflows_and_install(client):
-    found = client.get("/workflows").json()["data"]
-    assert "standup" in " ".join(item["title"].lower() for item in found)
-    created = client.post(f"/workflows/{found[0]['id']}/install-pipe")
-    assert created.status_code == 200
+def test_workflows_come_only_from_a_model(client):
+    assert client.get("/workflows").status_code == 200
+    assert client.post("/workflows/generate", json={"session_ids": [1]}).status_code == 400
+    assert client.post("/workflows/generate", json={}).status_code == 400
+    assert client.get("/workflows/999999").status_code == 404
 
 
 def test_raw_sql_is_read_only(client):
@@ -128,6 +117,25 @@ def test_ui_is_served(client):
     assert "/sessions" in script and "/graph" in script and "/clients" in script
     assert "checkout" not in script
     assert client.get("/static/app.css").status_code == 200
+
+
+def test_session_stats_count_a_recording(client):
+    sid = client.post("/sessions", json={"duration": "5m", "label": "stats"}).json()["id"]
+    shot = db.media_root() / "frames" / "stats-test.jpg"
+    shot.parent.mkdir(parents=True, exist_ok=True)
+    shot.write_bytes(b"x" * 100)
+    with db.conn() as connection:
+        for url in ("https://a.test/1", "https://a.test/1", "https://a.test/2", ""):
+            connection.execute(
+                "INSERT INTO frames(timestamp, app_name, browser_url, full_text, snapshot_path, session_id) VALUES ('2026-01-01T00:00:00+00:00', 'Chrome', ?, 'hello', 'frames/stats-test.jpg', ?)",
+                (url, sid),
+            )
+    live = client.get(f"/sessions/{sid}/stats").json()
+    assert (live["frames"], live["pages"], live["apps"]) == (4, 2, 1)
+    assert live["events"] >= 1 and live["media_bytes"] == 400 and live["storage_bytes"] == 420
+    assert client.get("/sessions/999999/stats").status_code == 404
+    client.post(f"/sessions/{sid}/stop")
+    client.delete(f"/sessions/{sid}")
 
 
 def test_parse_duration():

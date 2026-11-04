@@ -178,3 +178,31 @@ def test_install_refuses_jsonc(tmp_path):
     else:
         raise AssertionError("expected a refusal")
     assert "// comment" in target.read_text()
+
+
+def test_get_context_presets_carry_workflow_instructions(client):
+    from chronicle import contexts, llm
+
+    tools = {tool["name"]: tool for tool in handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]}
+    assert "job-applications" in tools["get_context"]["inputSchema"]["properties"]["preset"]["enum"]
+
+    def get(arguments):
+        return handle({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "get_context", "arguments": arguments}})["result"]
+
+    class NoModel:
+        name, model = "never", "never"
+
+        def complete(self, *_args, **_kwargs):
+            raise AssertionError("a preset pack must not call a model")
+
+    llm.use(NoModel())
+    try:
+        reply = get({"task": "next application", "preset": "job-applications"})
+    finally:
+        llm.use(None)
+    text = reply["content"][0]["text"]
+    assert not reply.get("isError") and "Never submit an application without confirmation" in text
+    assert text.startswith("# Applying to jobs context") and "Task: next application" in text
+    assert "Never submit" not in get({"task": "next application"})["content"][0]["text"]
+    assert get({"task": "x", "preset": "nope"})["isError"] is True
+    assert len(contexts.PRESETS) == len(tools["get_context"]["inputSchema"]["properties"]["preset"]["enum"])

@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chronicle documentation</title>
+<meta name="description" content="How to record, generate context files and workflows, build agent harnesses, and connect them to any agent.">
+<meta property="og:title" content="Chronicle documentation">
+<meta property="og:description" content="How to record, generate context files and workflows, build agent harnesses, and connect them to any agent.">
+<meta property="og:image" content="https://aniketxdey.github.io/chronicle/assets/headline.png">
+<link rel="icon" href="assets/icon.png?v=2">
+<link rel="stylesheet" href="style.css?v=6">
+</head>
+<body class="docs-page">
+<header class="top"><div class="top-inner">
+  <a class="brand" href="./"><img src="assets/icon.png?v=2" alt="">Chronicle</a>
+  <nav>
+    <a class="on" href="docs.html">Documentation</a>
+    <a href="install.html">Install</a>
+    <a href="benchmark.html">Benchmark</a>
+    <a class="gh" href="https://github.com/aniketxdey/chronicle"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
+  </nav>
+</div></header>
+
+<div class="docs">
+  <aside class="doc-nav" aria-label="Documentation">
+    <input id="doc-filter" type="search" placeholder="Filter" aria-label="Filter sections">
+    <div class="side-group"><p>Get started</p><a href="#overview">Overview</a><a href="#quickstart">Quickstart</a><a href="#first-recording">Your first recording</a></div><div class="side-group"><p>Concepts</p><a href="#recordings">Recordings</a><a href="#graph">Knowledge graph</a><a href="#contexts">Context files</a><a href="#workflows">Workflows</a><a href="#harnesses">Harnesses</a></div><div class="side-group"><p>Guides</p><a href="#models">Set up a model</a><a href="#connect">Connect an agent</a><a href="#hosted">Hosted agents and APIs</a><a href="#files">Use it as files</a></div><div class="side-group"><p>Reference</p><a href="#mcp">MCP server</a><a href="#api">REST API</a><a href="#cli">CLI</a><a href="#config">Configuration</a><a href="#data">Your data</a><a href="#troubleshooting">Troubleshooting</a></div>
+  </aside>
+  
+<article class="doc" id="doc">
+<h1 id="overview">Chronicle documentation</h1>
+<p class="lede">Chronicle turns recordings of your screen and system events into agent harnesses: context files, workflows, and a knowledge graph, all tailored to how you actually work.</p>
+<div class="grid three">
+  <a class="card link-card" href="#quickstart"><h3>Quickstart</h3><p>Explore the app on a sample workday, in a minute and without recording.</p></a>
+  <a class="card link-card" href="#harnesses"><h3>Build a harness</h3><p>Combine context files, workflows, and a graph for a line of work.</p></a>
+  <a class="card link-card" href="#connect"><h3>Connect an agent</h3><p>Give Claude, Cursor, ChatGPT, and others access over MCP.</p></a>
+</div>
+<p>There are three levels, from general to specific:</p>
+<table>
+  <tr><th>Level</th><th>What it is</th><th>Example</th></tr>
+  <tr><td><a href="#harnesses">Harness</a></td><td>Everything an agent needs for a whole line of work</td><td>Recruiting</td></tr>
+  <tr><td><a href="#contexts">Context file</a></td><td>General guidance for one kind of session, like an agent file</td><td>Researching job companies</td></tr>
+  <tr><td><a href="#workflows">Workflow</a></td><td>A short procedure for one specific job, like a skill</td><td>Customizing resume bullets to keep their formatting and length</td></tr>
+</table>
+<p class="note">Screens and GIFs on this page show a synthetic sample workday, with no real screen data. Time spent waiting on a model is cut from the GIFs.</p>
+
+<h2 id="quickstart">Quickstart</h2>
+<p>Install Chronicle, load the sample workday, and open the app. Nothing is recorded.</p>
+<pre><code>uv tool install "chronicle-context[graph]"
+chronicle demo
+chronicle serve</code></pre>
+<p>Open <code>http://127.0.0.1:3030</code>. The app opens on your latest recording, which here is <strong>Sample workday</strong>.</p>
+<figure class="demo"><img src="assets/screens/graph.png?v=2" alt="The Sample workday recording open on its knowledge graph" loading="lazy"></figure>
+<p>To see what an agent would receive, run this in another terminal:</p>
+<pre><code>chronicle context "finish the Acme export"</code></pre>
+<pre class="out"><code># Computer context (Chronicle)
+Task: finish the Acme export
+Window: the most recent 2h of history.
+
+## What you were doing
+- 14:55-15:31 meeting Acme weekly · Jordan Hale (36m)
+- 15:34-16:24 writing customer emails · export spec (50m)
+- 16:28-16:48 coding export.ts · asking Priya (20m)
+
+## On screen now
+- Chrome · Checks · PR 882 (frame 18)
+- URL: https://github.com/northwind/billing/actions</code></pre>
+<p>From here, <a href="#models">set up a model</a> so Chronicle can write context files and workflows, then <a href="#harnesses">build a harness</a>.</p>
+
+<h2 id="first-recording">Your first recording</h2>
+<p>First, check what this machine can capture:</p>
+<pre><code>chronicle doctor</code></pre>
+<pre class="out"><code>platform: darwin
+[ok] front window: Cursor
+[ok] idle time: 0.23
+[ok] clipboard: readable
+[ok] screenshot: 451 KB
+[ok] OCR: tesseract
+[!!] accessibility: grant Accessibility to the app that runs Chronicle</code></pre>
+<p>On macOS, give whatever runs Chronicle <strong>Screen Recording</strong> and <strong>Accessibility</strong> under System Settings › Privacy &amp; Security. That's your terminal for <code>chronicle record</code> and <code>chronicle serve</code>, or the host app (Claude Desktop, Cursor, and so on) when an agent starts the recording. Browser URLs need a one-time Automation prompt per browser.</p>
+<p>Then, on <strong>Recordings</strong>, pick a duration, say what you're about to do, and press <strong>Start recording</strong>. The panel shows live storage, frames, system events, pages, apps, and graph nodes. Press <strong>Stop and build graph</strong> when you're done, or let the timer finish.</p>
+<figure class="demo"><img src="assets/gifs/record.gif?v=2" alt="Starting a recording, watching live stats, and stopping it" loading="lazy"><figcaption>The sample frames here are synthetic.</figcaption></figure>
+<p>You can also record from the terminal, or let an agent do it with <code>start_recording</code>:</p>
+<pre><code>chronicle record 30m --label "file an expense report"
+chronicle stop
+chronicle sessions</code></pre>
+<p>Durations run from 10 seconds to 7 days, written like <code>90s</code>, <code>15m</code>, or <code>1h30m</code>. Press Ctrl-C to stop early. <code>chronicle record</code> captures in that terminal. With <code>--detach</code> it only starts the session, so a running <code>chronicle serve</code> has to do the capturing.</p>
+<p>The mini window, in the sidebar, keeps a record button and timer on top of your other windows in browsers that support Document Picture-in-Picture.</p>
+
+<h2 id="recordings">Recordings</h2>
+<p>A recording is the source of everything else. Every 5 seconds by default, Chronicle samples the front app and window, the browser URL (macOS), screen text from the Accessibility tree or OCR, and a screenshot. It also logs system events: <code>app_switch</code>, <code>window_focus</code>, <code>url_change</code>, <code>clipboard</code>, <code>idle_start</code>, <code>idle_end</code>, <code>session_start</code>, and <code>session_stop</code>.</p>
+<p>Keystrokes are never recorded. Password managers and System Settings are skipped, and emails, API keys, JWTs, and card numbers are redacted before anything is written.</p>
+<p>When a recording ends, its graph is built. If a model is set up, it then refines the graph and writes context files and workflows in the background.</p>
+<p>Opening a recording shows five tabs:</p>
+<table>
+  <tr><th>Tab</th><th>What's there</th></tr>
+  <tr><td>Knowledge graph</td><td>The graph, a node inspector, habitual app switches, and a chat about this recording</td></tr>
+  <tr><td>Contexts and workflows</td><td>What was generated from this recording, and buttons to make more</td></tr>
+  <tr><td>Timeline</td><td>Activity by app, frames with screenshots, system events, tasks, and URLs</td></tr>
+  <tr><td>Meetings</td><td>Transcripts, decisions, and action items, when a speech-to-text tool sends them to <code>POST /add</code></td></tr>
+  <tr><td>Search</td><td>Graph nodes, screen text, transcripts, events, URLs, and context files</td></tr>
+</table>
+<p><strong>All history</strong>, at the bottom of the recordings list, is every recording together, with older ones counting less.</p>
+
+<h2 id="graph">Knowledge graph</h2>
+<p>Each recording gets its own graph of the apps, windows, sites, pages, search queries, topics, files, tickets, PRs, code identifiers, people, projects, customers, meetings, and tasks it contains. Every node and edge records the time spent on it and the frames it came from, so an agent can cite its evidence.</p>
+<figure class="demo"><img src="assets/gifs/graph.gif?v=2" alt="Rotating the graph, opening a node, and asking about the recording" loading="lazy"></figure>
+<p>Drag to rotate, pinch to zoom, and select a particle to see what you did there, with its system events and frames in lists beneath it. Low-level kinds like windows and identifiers stay hidden until you choose <strong>Show everything</strong> or filter by kind. <strong>Refine with model</strong> has a model name the real work, merge duplicates, and add typed relations.</p>
+<h3 id="chat">Ask about a recording</h3>
+<p>The chat beneath the graph answers from that recording only and cites frames, which you can open. Without a model, it falls back to searching what was recorded.</p>
+<h3>From the terminal</h3>
+<pre><code>chronicle graph show --session 1
+chronicle graph find acme
+chronicle graph node pr:882
+chronicle graph tasks --session 1
+chronicle graph tune --session 1
+chronicle ask "Where did we land on the Acme export columns?"
+chronicle search invoice_id</code></pre>
+<p><code>graph tune</code> needs a <a href="#models">model</a>. Without one, <code>ask</code> searches instead of writing an answer.</p>
+
+<h2 id="contexts">Context files</h2>
+<p>A context file is general guidance for one kind of session, like an agent file. It says where things stand, how to work, and what to reference. It isn't a procedure, because those are <a href="#workflows">workflows</a>. Use one alone for a small session like backtesting or making a presentation, or combine several in a <a href="#harnesses">harness</a>.</p>
+<figure class="demo"><img src="assets/gifs/contexts.gif?v=3" alt="Generating context files and workflows from a recording" loading="lazy"></figure>
+<h3>Generate them</h3>
+<p>They're written automatically when a recording ends, if a model is set up. For older recordings, open <strong>Contexts and workflows</strong> and press <strong>Generate with model</strong>. The model reads everything recorded and names up to four files for the sessions it finds, such as "Researching job companies". Without a model, you get a General file and up to two others that match the recording's keywords, built from the evidence rather than written.</p>
+<p>To write one for specific work, press <strong>Generate</strong> on the Contexts page, or <strong>New context file</strong> on a recording, and fill in:</p>
+<ul>
+  <li><strong>Name</strong> and <strong>Description of the work:</strong> what the session is and what an agent should know going in.</li>
+  <li><strong>Recordings to look at:</strong> one or several, combined into one file.</li>
+  <li><strong>Earlier contexts to look at:</strong> where a recording disagrees with one, the file goes with the recording.</li>
+  <li><strong>Workflows to use:</strong> the file tells the agent when to use each one by name, and lists them, without copying their steps.</li>
+</ul>
+<figure class="demo"><img src="assets/gifs/compose.gif?v=2" alt="Naming a context file, choosing earlier contexts and a workflow, and generating it" loading="lazy"></figure>
+<p>You need to choose at least one source. Without a model, or if the model fails, the file is built from the sources themselves, without writing.</p>
+<h3>What's in one</h3>
+<figure class="demo"><img src="assets/screens/context-file.png?v=3" alt="A context file open beside its small knowledge graph" loading="lazy"></figure>
+<p>A model-written file has these sections, leaving out any the evidence doesn't support:</p>
+<ul>
+  <li><strong>Where things stand:</strong> what you were doing and where you left off.</li>
+  <li><strong>How to work here:</strong> instructions from what you did, like which tools to use and what to check first.</li>
+  <li><strong>Sections for that kind of work:</strong> tickets and PRs for coding, or sources read for research.</li>
+  <li><strong>Reference:</strong> exact files, URLs, identifiers, and people.</li>
+  <li><strong>Open threads:</strong> what's unfinished.</li>
+</ul>
+<p>Each file also has its own small graph of the entities it relies on, and lists the workflows made from it or its recording. <strong>Download .md</strong> includes both, so one file works as a single upload.</p>
+
+<h2 id="workflows">Workflows</h2>
+<p>A workflow is a short, action-oriented procedure for one specific job, like a skill. It has a trigger, inputs written as <code>{placeholders}</code>, three to seven steps, what to confirm first, and its own small graph. Steps that send, submit, publish, pay, merge, or delete are marked <strong>Confirm first</strong>.</p>
+<figure class="demo"><img src="assets/gifs/workflow.gif?v=2" alt="Filling in the new workflow dialog and opening the result" loading="lazy"></figure>
+<p>Press <strong>Generate with model</strong> on the Workflows page, or <strong>Make a workflow</strong> on a recording or context file:</p>
+<ul>
+  <li><strong>Name</strong> and <strong>What it's for</strong> ask for one specific workflow. Leave both blank and the model finds up to five in what you chose.</li>
+  <li><strong>Recordings to scan</strong> and <strong>Context files to scan</strong> set what it reads, so one workflow can draw on several recordings.</li>
+</ul>
+<p>Every workflow must cite frames from what you chose, and anything citing other frames is rejected. If the model can't find the work there, you're told rather than given something made up. Workflows need a <a href="#models">model</a> that supports tool calls.</p>
+<figure class="demo"><img src="assets/screens/workflow-page.png?v=2" alt="A workflow with its trigger, inputs, steps, and graph" loading="lazy"></figure>
+<p>Downloads use the same frontmatter as skills (<code>name</code> and <code>description</code>), so a file can go straight into a skills folder.</p>
+
+<h2 id="harnesses">Harnesses</h2>
+<p>A harness is everything an agent needs for a whole line of work. It holds:</p>
+<ul>
+  <li><code>AGENTS.md</code>: what the harness is for, which file to load when, and rules that hold everywhere.</li>
+  <li><code>contexts/</code>: context files.</li>
+  <li><code>workflows/</code>: workflows.</li>
+  <li><code>graph/</code>: a knowledge graph engine merged live from the recordings you choose, down to their system events.</li>
+</ul>
+<h3>Build one</h3>
+<p>On <strong>Harnesses</strong>, press <strong>New harness</strong>, or <strong>Build a harness</strong> on a recording, and follow the five steps:</p>
+<ol>
+  <li><strong>Purpose:</strong> a general name and a detailed description of what it's for.</li>
+  <li><strong>Recordings:</strong> what its graph is built from.</li>
+  <li><strong>Contexts:</strong> pick existing files. With a model, the ones that fit your description are marked <strong>Suggested</strong>. Recordings with no files yet can have them written here.</li>
+  <li><strong>Workflows:</strong> pick existing ones, and list any to write. The model proposes what's missing, and you can edit that list.</li>
+  <li><strong>Review:</strong> check the file tree, then build.</li>
+</ol>
+<figure class="demo"><img src="assets/gifs/harness.gif?v=2" alt="Designing a harness in five steps and opening it in the editor" loading="lazy"></figure>
+<p>Files are copied in, so editing a harness never changes the originals, and the originals stay usable on their own. If a workflow you asked for can't be written from the recordings, the app tells you which one and builds the rest.</p>
+<h3>Edit one</h3>
+<p>Opening a harness shows an editor with three panes.</p>
+<ul>
+  <li><strong>Left:</strong> the file tree. Use <strong>+</strong> to add a file, and <strong>Export</strong> to download.</li>
+  <li><strong>Middle:</strong> tabs for open files, with <strong>Preview</strong> and <strong>Source</strong>. Save with <code>⌘S</code>.</li>
+  <li><strong>Right:</strong> a chat that reads every file and can edit, add, or remove them, or write a new workflow from the recordings. Each change appears as a chip you can open.</li>
+</ul>
+<figure class="demo"><img src="assets/gifs/chat.gif?v=2" alt="Asking the chat to edit AGENTS.md, then undoing the change" loading="lazy"></figure>
+<p><strong>Undo</strong> reverses the last change, whether it came from the chat or from saving. Review what the chat changes, since a model can soften or misread what you asked for. Editing by chat needs a <a href="#models">model</a> that supports tool calls, but you can always edit in Source.</p>
+<h3>The graph engine</h3>
+<p>Open <code>graph/engine</code> in the tree to see the merged graph, search its entities and system events, and change which recordings it's built from.</p>
+<figure class="demo"><img src="assets/screens/harness-engine.png?v=2" alt="The graph engine open in the harness editor" loading="lazy"></figure>
+
+<h2 id="models">Set up a model</h2>
+<p>Contexts, workflows, and harnesses are written by a model you choose. Open <strong>Settings › Model</strong>, open a provider, add its key, and press <strong>Use</strong>. Each provider keeps its own key and model, so you can switch at any time. <strong>Test</strong> sends one small request.</p>
+<figure class="demo"><img src="assets/screens/settings-model.png?v=2" alt="Model settings with a row for each provider" loading="lazy"></figure>
+<table>
+  <tr><th>Provider</th><th>Default model</th><th>Key from the environment</th></tr>
+  <tr><td>OpenAI</td><td><code>gpt-4.1-mini</code></td><td><code>OPENAI_API_KEY</code></td></tr>
+  <tr><td>Anthropic</td><td><code>claude-sonnet-5-5</code></td><td><code>ANTHROPIC_API_KEY</code></td></tr>
+  <tr><td>Google Gemini</td><td><code>gemini-2.5-flash</code></td><td><code>GEMINI_API_KEY</code></td></tr>
+  <tr><td>OpenRouter</td><td><code>openai/gpt-4.1-mini</code></td><td><code>OPENROUTER_API_KEY</code></td></tr>
+  <tr><td>Local model</td><td>You choose</td><td>Not needed</td></tr>
+</table>
+<p>Keys can also live in a <code>.env</code> file in <code>~/.chronicle</code> or the current directory. What you choose in Settings beats <code>CHRONICLE_LLM</code>, unless that's set to <code>off</code>, which keeps models off on this computer no matter what.</p>
+<h3>Use a local model</h3>
+<p>Anything with an OpenAI-compatible endpoint works, including Ollama and LM Studio. With Ollama running, open <strong>Local model</strong> in Settings. The endpoint defaults to <code>http://localhost:11434/v1</code>, and the models you've pulled appear under <strong>Model</strong>. Pick one, then press <strong>Test</strong> and <strong>Use</strong>.</p>
+<pre><code>ollama pull llama3.2</code></pre>
+<p>Chat about a recording works with any model. Workflows, harness chat, and naming context files rely on tool calls, so pick a model that supports them. Models without tool support get the tools described in the prompt instead, but small ones often fail at this: in our testing, <code>gemma3:4b</code> answered questions well but couldn't write a valid workflow or edit a file.</p>
+<h3>What gets sent</h3>
+<p>The provider in use receives window titles, URLs, system events, and redacted screen text. A local model keeps them on your computer. With no model, Chronicle runs fully offline and still records, builds graphs, searches, and builds plain context files.</p>
+
+<h2 id="connect">Connect an agent</h2>
+<p>Chronicle is an MCP server. Desktop and command-line clients start it locally. In the app, <strong>Integrations</strong> shows which clients it found, in green, and connects or disconnects them.</p>
+<figure class="demo"><img src="assets/screens/integrations.png?v=2" alt="Integrations with detected clients in green and one expanded" loading="lazy"></figure>
+<p>From the terminal, <code>install</code> writes the server into a client's config and keeps the old file as a backup. <code>config</code> prints the snippet instead, and <code>--dry-run</code> shows what would be written. Restart the client afterwards.</p>
+<pre><code>chronicle mcp clients
+chronicle mcp install cursor --dry-run
+chronicle mcp config cursor</code></pre>
+<table>
+  <tr><th>Client</th><th>Set it up with</th><th>Config file (macOS)</th></tr>
+  <tr><td>Claude Code</td><td><code>chronicle mcp install claude-code</code></td><td>Runs <code>claude mcp add</code>. Check with <code>/mcp</code></td></tr>
+  <tr><td>Claude Desktop</td><td><code>chronicle mcp install claude-desktop</code></td><td><code>~/Library/Application Support/Claude/claude_desktop_config.json</code></td></tr>
+  <tr><td>Cursor</td><td><code>chronicle mcp install cursor</code></td><td><code>~/.cursor/mcp.json</code></td></tr>
+  <tr><td>VS Code (Copilot)</td><td><code>chronicle mcp install vscode</code></td><td><code>~/Library/Application Support/Code/User/mcp.json</code></td></tr>
+  <tr><td>Windsurf</td><td><code>chronicle mcp install windsurf</code></td><td><code>~/.codeium/windsurf/mcp_config.json</code></td></tr>
+  <tr><td>OpenAI Codex CLI</td><td><code>chronicle mcp install codex</code></td><td><code>~/.codex/config.toml</code></td></tr>
+  <tr><td>Gemini CLI</td><td><code>chronicle mcp install gemini-cli</code></td><td><code>~/.gemini/settings.json</code></td></tr>
+  <tr><td>Cline</td><td><code>chronicle mcp install cline</code></td><td>VS Code's <code>globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json</code></td></tr>
+  <tr><td>LM Studio</td><td><code>chronicle mcp install lm-studio</code></td><td><code>~/.lmstudio/mcp.json</code></td></tr>
+  <tr><td>Zed</td><td><code>chronicle mcp config zed</code></td><td>Add under <code>context_servers</code> in Zed's settings</td></tr>
+  <tr><td>Continue</td><td><code>chronicle mcp config continue</code></td><td><code>~/.continue/config.yaml</code></td></tr>
+  <tr><td>Goose</td><td><code>chronicle mcp config goose</code></td><td><code>~/.config/goose/config.yaml</code></td></tr>
+</table>
+<p>On Windows, these live under <code>%APPDATA%</code> or <code>%USERPROFILE%</code>, and on Linux under <code>~/.config</code>. The <code>config</code> command prints the right path for your machine.</p>
+<h3>Packaged installs</h3>
+<p>These don't need Chronicle installed first, only <a href="https://docs.astral.sh/uv/">uv</a>.</p>
+<pre><code>claude plugin marketplace add aniketxdey/chronicle
+claude plugin install chronicle@chronicle</code></pre>
+<pre><code>gemini extensions install https://github.com/aniketxdey/chronicle</code></pre>
+<p>Any client that takes a command can run the published package directly:</p>
+<pre class="out"><code>{
+  "mcpServers": {
+    "chronicle": {
+      "command": "uvx",
+      "args": ["--from", "chronicle-context[graph]", "chronicle-context", "mcp"]
+    }
+  }
+}</code></pre>
+<h3>How agents use it</h3>
+<p>An agent calls <code>list_harnesses</code> first. If one fits, it reads <code>AGENTS.md</code> with <code>get_harness</code>, loads the files it points to with <code>read_harness_file</code>, and looks things up with <code>search_harness_graph</code>. <code>get_context</code> adds what's on screen right now. A local server can also record on its own when an agent calls <code>start_recording</code>. Only one Chronicle process captures at a time.</p>
+
+<h2 id="hosted">Hosted agents and APIs</h2>
+<p>These run on someone else's servers, so they need a public HTTPS URL. <code>chronicle serve</code> exposes MCP at <code>/mcp</code>. Set a token, then put it behind a tunnel you control:</p>
+<pre class="noexec"><code>export CHRONICLE_TOKEN=$(openssl rand -hex 16)
+export CHRONICLE_PUBLIC_URL=https://YOUR-TUNNEL-HOST
+chronicle serve &amp;
+cloudflared tunnel --url http://127.0.0.1:3030
+echo "$CHRONICLE_PUBLIC_URL/mcp/$CHRONICLE_TOKEN"</code></pre>
+<p class="note">Anyone with that URL can read your Chronicle data. Stop the tunnel when you're done, and change the token if the URL leaks. Clients that support headers can use <code>/mcp</code> with <code>Authorization: Bearer</code> instead.</p>
+<p><strong>ChatGPT:</strong> open Settings › Connectors › Advanced, turn on Developer mode, and create a connector with that URL and no authentication. The <code>search</code> and <code>fetch</code> tools return what connectors and deep research expect.</p>
+<p><strong>APIs:</strong> <code>chronicle mcp config</code> prints a starting point for each. Provider model names and beta flags change often, so check their MCP docs too.</p>
+<pre><code>chronicle mcp config openai-api
+chronicle mcp config anthropic-api
+chronicle mcp config gemini-api
+chronicle mcp config http</code></pre>
+<p>Fuller scripts are in <a href="https://github.com/aniketxdey/chronicle/tree/main/examples">examples/</a>.</p>
+
+<h2 id="files">Use it as files</h2>
+<p>For tools without MCP, download what you need:</p>
+<table>
+  <tr><th>You want</th><th>Where</th><th>You get</th></tr>
+  <tr><td>A whole harness, as a folder</td><td>Editor › Export › Folder as .zip</td><td><code>AGENTS.md</code>, <code>harness.json</code>, <code>contexts/</code>, <code>workflows/</code>, and <code>graph/</code>, with graphs as JSON and GraphML and system events as <code>events.jsonl</code></td></tr>
+  <tr><td>A whole harness, as one upload</td><td>Editor › Export › One .md file</td><td>Every file and graph in one Markdown file</td></tr>
+  <tr><td>One context file or workflow</td><td>Its page › Download .md</td><td>The file with its graph as text</td></tr>
+  <tr><td>One graph</td><td>Its page › Download</td><td>JSON, text, GraphML, or Cypher</td></tr>
+</table>
+<p><strong>Integrations › Harnesses as files</strong> lists which to use where. For example, use the one file for ChatGPT or Claude Projects, unzip into a repo for Cursor or Codex, and use Cypher for Neo4j.</p>
+
+<h2 id="mcp">MCP server</h2>
+<p>Two transports share one set of tools: stdio with <code>chronicle mcp</code>, and Streamable HTTP at <code>POST /mcp</code> on a running server. Protocol versions 2025-06-18, 2025-03-26, and 2024-11-05 are supported. To look at it by hand:</p>
+<pre class="noexec"><code>npx @modelcontextprotocol/inspector --cli chronicle mcp --method tools/list</code></pre>
+<h3>Tools</h3>
+<table>
+  <tr><th>Tool</th><th>What it does</th></tr>
+  <tr><td><code>list_harnesses</code></td><td>The harnesses you've built. Agents call this first</td></tr>
+  <tr><td><code>get_harness</code></td><td>One harness's <code>AGENTS.md</code> and file list</td></tr>
+  <tr><td><code>read_harness_file</code></td><td>One file in a harness, with its graph as text</td></tr>
+  <tr><td><code>search_harness_graph</code></td><td>Entities and system events in a harness's graph engine</td></tr>
+  <tr><td><code>get_context_file</code></td><td>One context file on its own</td></tr>
+  <tr><td><code>get_workflow</code></td><td>One workflow on its own</td></tr>
+  <tr><td><code>get_graph</code></td><td>The graph of a recording, context file, or workflow, as text or JSON</td></tr>
+  <tr><td><code>get_context</code></td><td>What's on screen, recent activity, and relevant entities for a task, with an optional preset</td></tr>
+  <tr><td><code>search_history</code></td><td>Full-text search over screen text, events, transcripts, and memories</td></tr>
+  <tr><td><code>query_graph</code></td><td>Find entities by text or kind</td></tr>
+  <tr><td><code>get_entity</code></td><td>One entity with its neighbors and evidence</td></tr>
+  <tr><td><code>graph_summary</code></td><td>Counts, top entities, and common app switches</td></tr>
+  <tr><td><code>list_tasks</code></td><td>A timeline of what you were doing</td></tr>
+  <tr><td><code>get_frame</code></td><td>One captured frame, optionally with its screenshot</td></tr>
+  <tr><td><code>activity_summary</code></td><td>Time per app, top windows, and meetings for a time range</td></tr>
+  <tr><td><code>list_sessions</code></td><td>Your recordings</td></tr>
+  <tr><td><code>start_recording</code>, <code>stop_recording</code></td><td>Record a demonstration for a set time</td></tr>
+  <tr><td><code>rebuild_graph</code></td><td>Rebuild a graph from stored frames and events</td></tr>
+  <tr><td><code>tune_graph</code></td><td>Refine a graph with your configured model</td></tr>
+  <tr><td><code>graph_review</code>, <code>graph_apply</code></td><td>Let the connected agent curate the graph itself, with no model of Chronicle's own</td></tr>
+  <tr><td><code>list_meetings</code></td><td>Meetings with speakers and transcripts</td></tr>
+  <tr><td><code>search</code>, <code>fetch</code></td><td>The interface ChatGPT connectors and deep research expect</td></tr>
+</table>
+<h3>Resources and prompts</h3>
+<p><strong>Resources:</strong> <code>chronicle://context/current</code>, <code>chronicle://graph/summary</code>, and <code>chronicle://sessions</code>. <strong>Templates:</strong> <code>chronicle://harness/{id}</code>, <code>chronicle://context-file/{id}</code>, <code>chronicle://workflow/{id}</code>, <code>chronicle://context/session/{id}</code>, and <code>chronicle://frame/{id}</code>.</p>
+<p><strong>Prompts:</strong> <code>use_my_computer_context(task)</code> grounds a task in Chronicle, and <code>learn_from_recording(session_id)</code> turns a recording into steps an agent can repeat.</p>
+
+<h2 id="api">REST API</h2>
+<p><code>chronicle serve</code> runs the API at <code>http://127.0.0.1:3030</code>, with interactive docs at <a href="#api"><code>/docs</code></a>. If <code>CHRONICLE_TOKEN</code> is set, send it as <code>Authorization: Bearer</code>.</p>
+<pre><code>curl -s http://127.0.0.1:3030/health
+curl -s http://127.0.0.1:3030/sessions
+curl -s "http://127.0.0.1:3030/graph/search?q=acme"
+curl -s -X POST http://127.0.0.1:3030/ask -H 'Content-Type: application/json' -d '{"question":"Acme export","session_id":1}'
+curl -s -X POST http://127.0.0.1:3030/contexts -H 'Content-Type: application/json' -d '{"preset":"coding","session_id":1,"title":"Shipping exports"}'
+curl -s -X POST http://127.0.0.1:3030/harnesses -H 'Content-Type: application/json' -d '{"name":"Billing","purpose":"Deliver billing exports","session_ids":[1]}'
+curl -s -o harness.zip http://127.0.0.1:3030/harnesses/1/export</code></pre>
+<table>
+  <tr><th>Route</th><th>What it does</th></tr>
+  <tr><td><code>GET/POST /sessions</code>, <code>POST /sessions/{id}/stop</code>, <code>DELETE /sessions/{id}</code></td><td>List, start, stop, and delete recordings</td></tr>
+  <tr><td><code>GET /sessions/{id}/artifacts</code>, <code>POST /sessions/{id}/generate</code></td><td>A recording's context files and workflows, and writing them</td></tr>
+  <tr><td><code>GET /graph</code>, <code>/graph/summary</code>, <code>/graph/search</code>, <code>/graph/node</code>, <code>/graph/tasks</code></td><td>Read a graph</td></tr>
+  <tr><td><code>POST /graph/build</code>, <code>/graph/tune</code></td><td>Rebuild or refine a graph</td></tr>
+  <tr><td><code>GET /graph/download/{recording|context|workflow}/{id}</code></td><td>One graph as <code>json</code>, <code>md</code>, <code>graphml</code>, or <code>cypher</code></td></tr>
+  <tr><td><code>GET /context</code></td><td>A context pack for a task</td></tr>
+  <tr><td><code>GET/POST /contexts</code>, <code>POST /contexts/compose</code>, <code>GET /contexts/presets</code>, <code>GET/DELETE /contexts/{id}</code>, <code>GET /contexts/{id}/document</code></td><td>Context files</td></tr>
+  <tr><td><code>GET /workflows</code>, <code>POST /workflows/generate</code>, <code>GET/DELETE /workflows/{id}</code>, <code>GET /workflows/{id}/document</code></td><td>Workflows</td></tr>
+  <tr><td><code>GET/POST /harnesses</code>, <code>POST /harnesses/suggest</code>, <code>GET/PUT/DELETE /harnesses/{id}</code></td><td>Harnesses</td></tr>
+  <tr><td><code>PUT/POST/DELETE /harnesses/{id}/file</code>, <code>POST /harnesses/{id}/chat</code>, <code>POST /harnesses/{id}/undo</code></td><td>Edit a harness</td></tr>
+  <tr><td><code>GET /harnesses/{id}/engine</code>, <code>/engine/search</code>, <code>/export</code></td><td>A harness's graph engine and downloads</td></tr>
+  <tr><td><code>POST /ask</code>, <code>/ask/stream</code>, <code>GET /search</code></td><td>Answers and full-text search</td></tr>
+  <tr><td><code>GET /llm/status</code>, <code>/llm/models</code>, <code>POST /llm/test</code>, <code>POST /llm/providers/{provider}</code></td><td>Model setup</td></tr>
+  <tr><td><code>GET /clients</code>, <code>POST /clients/{id}/install</code>, <code>/uninstall</code></td><td>MCP clients</td></tr>
+  <tr><td><code>POST /add</code></td><td>Push frames, events, or transcripts from your own capture, such as a Whisper pipeline</td></tr>
+</table>
+<p>Harnesses are built and edited in the app, over REST, or through an agent. The CLI has no harness commands.</p>
+
+<h2 id="cli">CLI</h2>
+<table>
+  <tr><th>Command</th><th>What it does</th></tr>
+  <tr><td><code>chronicle serve [--host --port]</code></td><td>Run the app, REST API, and HTTP MCP</td></tr>
+  <tr><td><code>chronicle record [duration] [--label --interval --detach]</code></td><td>Record for a set time (30 minutes by default)</td></tr>
+  <tr><td><code>chronicle stop [id]</code>, <code>chronicle sessions</code></td><td>Stop and list recordings</td></tr>
+  <tr><td><code>chronicle context [task] [--minutes --session --json]</code></td><td>Print what an agent would receive</td></tr>
+  <tr><td><code>chronicle graph show|find|node|tasks|export</code></td><td>Read a graph. Most take <code>--session</code></td></tr>
+  <tr><td><code>chronicle graph build [--session --full]</code></td><td>Rebuild a graph</td></tr>
+  <tr><td><code>chronicle graph merges [--session --threshold --json]</code></td><td>Show which near-duplicate nodes get merged</td></tr>
+  <tr><td><code>chronicle graph tune [--session --rounds --force --reset]</code></td><td>Refine a graph with your model</td></tr>
+  <tr><td><code>chronicle mcp [--no-record]</code></td><td>Run the MCP server on stdio</td></tr>
+  <tr><td><code>chronicle mcp clients|config|install</code></td><td>Set up a client</td></tr>
+  <tr><td><code>chronicle search</code>, <code>chronicle ask</code></td><td>Search history, or answer from it</td></tr>
+  <tr><td><code>chronicle status</code>, <code>chronicle doctor</code></td><td>Counts and state, and what this machine can capture</td></tr>
+  <tr><td><code>chronicle demo [--force]</code></td><td>Load the sample workday. <code>--force</code> deletes existing history first</td></tr>
+</table>
+
+<h2 id="config">Configuration</h2>
+<p>Most settings are in the app under <strong>Settings</strong>: seconds between samples, idle threshold, screenshots, OCR, clipboard, redaction, retention (30 days by default, or 0 to keep everything), and <a href="#models">models</a>.</p>
+<table>
+  <tr><th>Variable</th><th>Default</th><th>Meaning</th></tr>
+  <tr><td><code>CHRONICLE_HOME</code></td><td><code>~/.chronicle</code></td><td>Database, screenshots, and lock file</td></tr>
+  <tr><td><code>CHRONICLE_HOST</code>, <code>CHRONICLE_PORT</code></td><td><code>127.0.0.1</code>, <code>3030</code></td><td>Where <code>chronicle serve</code> listens</td></tr>
+  <tr><td><code>CHRONICLE_TOKEN</code></td><td>Unset</td><td>Require this token on the HTTP API and MCP</td></tr>
+  <tr><td><code>CHRONICLE_PUBLIC_URL</code></td><td><code>http://127.0.0.1:3030</code></td><td>Base URL for links and remote client snippets</td></tr>
+  <tr><td><code>CHRONICLE_DEMO=1</code></td><td>Off</td><td>Load the sample workday into an empty database on start</td></tr>
+  <tr><td><code>CHRONICLE_DISABLE_CAPTURE=1</code></td><td>Off</td><td>Never record from this process</td></tr>
+  <tr><td><code>CHRONICLE_HALF_LIFE_HOURS</code></td><td><code>72</code></td><td>How fast older recordings count less in All history. <code>0</code> or <code>off</code> disables it</td></tr>
+  <tr><td><code>CHRONICLE_LLM</code></td><td>Unset</td><td><code>openai</code>, <code>anthropic</code>, <code>gemini</code>, <code>openrouter</code>, <code>local</code>, or <code>off</code>. Unset uses the first provider with a key. Settings beat it, except <code>off</code></td></tr>
+  <tr><td><code>CHRONICLE_LLM_MODEL</code></td><td>Provider default</td><td>Model for the provider named by <code>CHRONICLE_LLM</code></td></tr>
+  <tr><td><code>CHRONICLE_LLM_BASE_URL</code></td><td><code>http://localhost:11434/v1</code></td><td>Endpoint for the local provider</td></tr>
+  <tr><td><code>OPENAI_BASE_URL</code></td><td>OpenAI</td><td>Endpoint for the OpenAI provider</td></tr>
+</table>
+
+<h2 id="data">Your data</h2>
+<p>Everything is in <code>~/.chronicle</code>: <code>db.sqlite</code>, screenshots in <code>media/</code>, and <code>capture.lock</code>. There's no account and no telemetry. Data leaves that folder only through <a href="#connect">agents you connect</a> and <a href="#models">the model you choose</a>. Delete a recording on the Recordings page, or delete the folder to remove everything.</p>
+<p>Deleting a recording removes its frames, events, graph, and context files. Harnesses and workflows keep their own text, so delete those too if you need that gone. The full policy is in <a href="https://github.com/aniketxdey/chronicle/blob/main/PRIVACY.md">PRIVACY.md</a>.</p>
+
+<h2 id="troubleshooting">Troubleshooting</h2>
+<table>
+  <tr><th>You see</th><th>What to do</th></tr>
+  <tr><td><code>[!!] accessibility</code> from <code>chronicle doctor</code></td><td>Grant Accessibility to the app running Chronicle, then restart it. Until then, screen text comes from OCR if <code>tesseract</code> is installed</td></tr>
+  <tr><td>A recording with 0 frames</td><td>Something must be capturing. <code>chronicle record</code> does in its own terminal, and <code>--detach</code> needs a running <code>chronicle serve</code>. Check that <code>CHRONICLE_DISABLE_CAPTURE</code> isn't set</td></tr>
+  <tr><td><code>no model is set up</code></td><td><a href="#models">Add a model</a>. Check that <code>CHRONICLE_LLM</code> isn't <code>off</code></td></tr>
+  <tr><td><code>duration must be between 10 seconds and 7 days</code></td><td>Use a longer duration, like <code>30s</code></td></tr>
+  <tr><td><code>History is not empty</code> from <code>chronicle demo</code></td><td>The sample only loads into an empty database. <code>--force</code> replaces your history, so point <code>CHRONICLE_HOME</code> somewhere else to keep it</td></tr>
+  <tr><td>Your model <code>does not support tools</code>, or workflows fail on a local model</td><td>Use a local model with tool support, or a cloud provider</td></tr>
+  <tr><td><code>401</code> from the API</td><td><code>CHRONICLE_TOKEN</code> is set. Send it as <code>Authorization: Bearer</code></td></tr>
+  <tr><td>An agent doesn't see Chronicle</td><td>Restart the client after installing, then check its MCP list. Use <code>chronicle mcp config</code> to see what it should contain</td></tr>
+</table>
+</article>
+
+  <aside class="doc-toc" aria-label="On this page"><p>On this page</p><div id="toc"></div></aside>
+</div>
+<footer><div>Chronicle is MIT licensed. Built by <a href="https://github.com/aniketxdey">Aniket Dey</a>. <a href="https://github.com/aniketxdey/chronicle/issues">Report an issue</a>.</div></footer>
+<script src="site.js?v=6"></script>
+</body>
+</html>

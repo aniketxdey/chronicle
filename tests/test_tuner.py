@@ -27,7 +27,7 @@ class Fake:
         self.tools: list[dict] = []
 
     def call_tools(self, system, user, tools):
-        self.prompts.append(json.loads(user))
+        self.prompts.append(json.loads(tuner.unmark(user)))
         self.tools = tools
         item = self.script.pop(0) if self.script else []
         if isinstance(item, Exception):
@@ -97,7 +97,7 @@ def test_tune_applies_patches_that_survive_rebuild_and_reset(client):
     scope = f"session:{sid}"
     fake = Fake(_script(scope), [])
     result = tuner.tune(sid, provider=fake)
-    assert result["status"] == "ok" and result["rounds"] == 2 and result["calls"] == 2
+    assert result["status"] == "ok" and result["rounds"] == 2 and result["calls"] == 3
     assert result["applied"] == 8
     assert {item["op"] for item in result["rejected"]} == {"add_relation", "retype_node"}
     assert "rejected_last_round" in fake.prompts[1]
@@ -209,7 +209,7 @@ def test_offline_by_default(client):
     assert reply["result"]["isError"] is True and "CHRONICLE_LLM" in reply["result"]["content"][0]["text"]
     reset = handle({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "tune_graph", "arguments": {"session_id": sid, "reset": True}}})
     assert json.loads(reset["result"]["content"][0]["text"])["removed"] == 0
-    assert graph.summary(sid)["llm"] == {"patches": 0, "activities": [], "relations": [], "entities": []}
+    assert graph.summary(sid)["llm"] == {"patches": 0, "activities": [], "actions": [], "relations": [], "entities": []}
 
 
 def test_errors_are_reported_not_raised(client):

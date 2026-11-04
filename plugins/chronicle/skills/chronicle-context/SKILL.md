@@ -9,7 +9,9 @@ Chronicle records this computer's screen and system events locally and keeps a k
 
 ## Before acting
 
-1. Call `get_context` with the task in the user's words. Read "What you were doing" and "On screen now" before anything else.
+Call `list_harnesses` to see the harnesses the user has built. If one fits the work, read it with `get_harness`, load the files it points to with `read_harness_file`, follow a workflow when its trigger matches, asking before anything it marks for confirmation, and look things up with `search_harness_graph`.
+
+1. Call `get_context` with the task in the user's words, and a `preset` when one fits the work, such as `coding` or `job-applications`. Follow the instructions at the top of a preset pack. Read "What you were doing" and "On screen now" before anything else.
 2. If the task names something specific, call `query_graph` with it, then `get_entity` on the best match to see what it connects to.
 3. When the user refers back in time ("this morning", "the page I had open"), call `list_tasks` or `search_history` with a time range.
 4. When the layout of the screen matters, call `get_frame` with `include_image=true` on the newest relevant frame.

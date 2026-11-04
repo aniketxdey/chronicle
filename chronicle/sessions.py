@@ -147,11 +147,42 @@ def get(session_id: int) -> dict:
     return item
 
 
+def stats(session_id: int) -> dict:
+    """Live totals for one recording. Storage is its screenshots on disk plus the text saved with its frames."""
+    with db.conn() as connection:
+        if connection.execute("SELECT 1 FROM sessions WHERE id = ?", (session_id,)).fetchone() is None:
+            raise db.ChronicleError("session not found", 404)
+        totals = connection.execute(
+            """
+            SELECT COUNT(*) AS frames, COUNT(DISTINCT NULLIF(browser_url, '')) AS pages, COUNT(DISTINCT NULLIF(app_name, '')) AS apps,
+                   COALESCE(SUM(LENGTH(COALESCE(full_text, '')) + LENGTH(COALESCE(accessibility_text, '')) + LENGTH(COALESCE(ocr_text, ''))), 0) AS text_bytes
+            FROM frames WHERE session_id = ?
+            """,
+            (session_id,),
+        ).fetchone()
+        events = connection.execute("SELECT COUNT(*) AS n FROM ui_events WHERE session_id = ?", (session_id,)).fetchone()["n"]
+        nodes = connection.execute("SELECT COUNT(*) AS n FROM kg_nodes WHERE scope = ?", (f"session:{session_id}",)).fetchone()["n"]
+        paths = [row["snapshot_path"] for row in connection.execute(
+            "SELECT snapshot_path FROM frames WHERE session_id = ? AND snapshot_path IS NOT NULL", (session_id,),
+        )]
+    media_bytes = 0
+    for path in paths:
+        try:
+            media_bytes += (db.media_root() / path).stat().st_size
+        except OSError:
+            pass
+    return {
+        **dict(totals), "events": events, "graph_nodes": nodes, "media_bytes": media_bytes,
+        "storage_bytes": media_bytes + totals["text_bytes"],
+    }
+
+
 def list_sessions(limit: int = 50) -> list[dict]:
     finalize_due()
     with db.conn() as connection:
         rows = connection.execute("SELECT * FROM sessions ORDER BY id DESC LIMIT ?", (max(1, min(limit, 500)),)).fetchall()
-    return [_public(row) for row in rows]
+        files = {row["session_id"]: row["n"] for row in connection.execute("SELECT session_id, COUNT(*) AS n FROM contexts GROUP BY session_id")}
+    return [{**_public(row), "contexts": files.get(row["id"], 0)} for row in rows]
 
 
 def delete(session_id: int) -> dict:
@@ -176,6 +207,7 @@ def delete(session_id: int) -> dict:
         graph.drop_shard(connection, graph.scope_for(session_id))
         connection.execute("DELETE FROM kg_llm_patches WHERE scope = ?", (f"session:{session_id}",))
         connection.execute("DELETE FROM settings WHERE key LIKE ?", (f"llm_tuned%:session:{session_id}",))
+        connection.execute("DELETE FROM contexts WHERE session_id = ?", (session_id,))
         connection.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
     for path in paths:
         if path:

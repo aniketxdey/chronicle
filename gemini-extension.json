@@ -1,6 +1,6 @@
 {
   "name": "chronicle",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Local knowledge graph of your screen activity (apps, pages, searches, topics, files, tickets, people, tasks), served as context over MCP.",
   "mcpServers": {
     "chronicle": {

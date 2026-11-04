@@ -849,6 +849,15 @@ def aggregate(full: bool = False) -> dict:
             "UPDATE kg_nodes SET props = json_set(COALESCE(props, '{}'), '$.events', json(?)) WHERE scope = 'all' AND id = ?",
             [(json.dumps(counts), node_id) for node_id, counts in events.items()],
         )
+        actions: dict[str, list[dict]] = {}
+        for row in connection.execute(
+            f"SELECT n.id, json_extract(n.props, '$.actions') AS actions {_NODE_SOURCE[mode]} AND json_extract(n.props, '$.actions') IS NOT NULL"
+        ):
+            actions.setdefault(row["id"], []).extend(item for item in json.loads(row["actions"]) if item not in actions.get(row["id"], []))
+        connection.executemany(
+            "UPDATE kg_nodes SET props = json_set(COALESCE(props, '{}'), '$.actions', json(?)) WHERE scope = 'all' AND id = ?",
+            [(json.dumps(items), node_id) for node_id, items in actions.items()],
+        )
         connection.execute("DELETE FROM kg_dirty_nodes")
         connection.execute("DELETE FROM kg_dirty_edges")
         replayed = _replay_all(connection) if tuned else None
@@ -1063,6 +1072,10 @@ def llm_view(connection, scope: str, top: int = 8) -> dict:
         """,
         (scope, top * 2),
     ).fetchall()
+    acted = connection.execute(
+        "SELECT label, props FROM kg_nodes WHERE scope = ? AND json_extract(props, '$.actions') IS NOT NULL ORDER BY seconds DESC, weight DESC LIMIT ?",
+        (scope, top * 3),
+    ).fetchall()
     if scope == "all":
         count = connection.execute("SELECT COUNT(*) AS n FROM kg_llm_patches").fetchone()["n"]
     else:
@@ -1070,6 +1083,10 @@ def llm_view(connection, scope: str, top: int = 8) -> dict:
     return {
         "patches": count,
         "activities": [{"id": row["id"], "summary": row["label"], "nodes": involved.get(row["id"], [])[:6]} for row in activities],
+        "actions": [
+            {"node": row["label"], "text": item["text"], "status": item.get("status"), "frames": item.get("frames", [])}
+            for row in acted for item in json.loads(row["props"])["actions"]
+        ][:top * 4],
         "relations": [
             {"src": row["src"], "rel": row["rel"], "dst": row["dst"], "from": row["src_label"], "to": row["dst_label"],
              "confidence": json.loads(row["props"] or "{}").get("confidence")}
@@ -1215,6 +1232,36 @@ def find(q: str | None = None, kind: str | None = None, limit: int = 20, session
     return [_node_public(row, scale) for row in rows]
 
 
+DETAIL_CAP = 80
+
+
+def _node_detail(connection, public: dict) -> dict:
+    """What a node holds for browsing: named actions, and the frames and system events behind them."""
+    refs = public["evidence"]
+    frame_ids = sorted({ref["id"] for ref in refs if ref.get("type") == "frame"} | {
+        frame for item in public["props"].get("actions", []) for frame in item.get("frames", [])
+    })[:DETAIL_CAP]
+    event_ids = [ref["id"] for ref in refs if ref.get("type") == "event"][:DETAIL_CAP]
+    frame_marks, event_marks = ",".join("?" * len(frame_ids)), ",".join("?" * len(event_ids))
+    frames = connection.execute(
+        f"SELECT id, timestamp, app_name, window_name, browser_url FROM frames WHERE id IN ({frame_marks}) ORDER BY timestamp, id", frame_ids,
+    ).fetchall()
+    events = connection.execute(
+        f"""
+        SELECT id, timestamp, event_type, app_name, text, frame_id FROM ui_events
+        WHERE frame_id IN ({frame_marks}) OR id IN ({event_marks}) ORDER BY timestamp, id LIMIT ?
+        """,
+        [*frame_ids, *event_ids, DETAIL_CAP],
+    ).fetchall()
+    stamps = {row["id"]: row["timestamp"] for row in frames}
+    actions = []
+    for item in public["props"].get("actions", []):
+        seen = [stamps[frame] for frame in item.get("frames", []) if frame in stamps]
+        actions.append({**item, "at": min(seen) if seen else None})
+    actions.sort(key=lambda item: item["at"] or "")
+    return {"actions": actions, "frames": [dict(row) for row in frames], "events": [dict(row) for row in events]}
+
+
 def node(node_id: str, session_id: int | None = None, limit: int = 25) -> dict:
     ensure(session_id)
     scope = scope_for(session_id)
@@ -1250,9 +1297,12 @@ def node(node_id: str, session_id: int | None = None, limit: int = 25) -> dict:
             """,
             (row["id"], row["id"], scope, row["id"], row["id"], max(1, min(limit, 200))),
         ).fetchall()
+        public = _node_public(row, scale)
+        detail = _node_detail(connection, public)
     return {
         "scope": scope,
-        "node": _node_public(row, scale),
+        "node": public,
+        **detail,
         "neighbors": [
             {
                 "id": edge["other_id"], "kind": edge["other_kind"], "label": edge["other_label"],
@@ -1309,6 +1359,66 @@ def subgraph(task: str | None, session_id: int | None = None, max_nodes: int = 3
                 (scope, *ids, *ids, max_nodes * 3),
             ).fetchall()
     return {"scope": scope, "seeds": [item["id"] for item in seeds], "nodes": list(chosen.values()), "edges": [_edge_public(e, scale) for e in edges]}
+
+
+MINI_HIDDEN = {"window", "session", "task", "topic_cluster", "identifier"}
+
+
+def slim(data: dict) -> dict:
+    """A graph as it travels in a file: what a reader needs from each node and edge, and nothing internal."""
+    nodes = []
+    for node in data["nodes"]:
+        actions = (node.get("props") or {}).get("actions") or []
+        nodes.append({
+            "id": node["id"], "kind": node["kind"], "label": node["label"], "seconds": round(node.get("seconds") or 0),
+            "weight": round(node.get("weight") or 0, 2), "props": {"actions": actions[:12]} if actions else {},
+        })
+    edges = [{"src": edge["src"], "dst": edge["dst"], "rel": edge["rel"], "weight": round(edge.get("weight") or 0, 2)} for edge in data["edges"]]
+    return {"nodes": nodes, "edges": edges}
+
+
+def mini(task: str | None, session_ids: list[int | None] | None = None, max_nodes: int = 28) -> dict:
+    """The part of one or more recordings' graphs that a context file or workflow relies on."""
+    session_ids = session_ids or [None]
+    share = max(8, max_nodes // len(session_ids))
+    nodes: dict[str, dict] = {}
+    edges: dict[tuple, dict] = {}
+    for session_id in session_ids:
+        found = subgraph(task, session_id, max_nodes=share) if task else None
+        # A query that matches little still deserves a graph, so fall back to the recording's main nodes.
+        if not found or sum(node["kind"] not in MINI_HIDDEN for node in found["nodes"]) < 4:
+            found = subgraph(None, session_id, max_nodes=share)
+        for node in found["nodes"]:
+            if node["kind"] not in MINI_HIDDEN:
+                nodes.setdefault(node["id"], node)
+        for edge in found["edges"]:
+            if edge["rel"] != "has_window":
+                edges.setdefault((edge["src"], edge["dst"], edge["rel"]), edge)
+    kept = sorted(nodes.values(), key=lambda node: -(node.get("seconds") or node.get("weight") or 0))[:max_nodes]
+    ids = {node["id"] for node in kept}
+    return slim({"nodes": kept, "edges": [edge for edge in edges.values() if edge["src"] in ids and edge["dst"] in ids]})
+
+
+def merged(session_ids: list[int], limit: int = 300) -> dict:
+    """Several recordings' graphs as one: the same entity in two recordings becomes one node."""
+    nodes: dict[str, dict] = {}
+    edges: dict[tuple, dict] = {}
+    for session_id in session_ids:
+        data = slim(export(session_id, limit=limit))
+        for node in data["nodes"]:
+            kept = nodes.get(node["id"])
+            if kept is None:
+                nodes[node["id"]] = {**node, "props": {"actions": list((node.get("props") or {}).get("actions") or [])}}
+                continue
+            kept["seconds"] += node["seconds"]
+            kept["weight"] += node["weight"]
+            kept["props"]["actions"] += (node.get("props") or {}).get("actions") or []
+        for edge in data["edges"]:
+            kept = edges.setdefault((edge["src"], edge["dst"], edge["rel"]), {**edge, "weight": 0})
+            kept["weight"] += edge["weight"]
+    ranked = sorted(nodes.values(), key=lambda node: -(node["seconds"] or node["weight"]))[:limit]
+    ids = {node["id"] for node in ranked}
+    return {"nodes": ranked, "edges": [edge for edge in edges.values() if edge["src"] in ids and edge["dst"] in ids]}
 
 
 def export(session_id: int | None = None, limit: int = 160) -> dict:

@@ -54,7 +54,7 @@ def test_llm_is_on_by_default_when_a_key_is_available(no_env):
     assert llm.configured_name() == "off" and not llm.enabled()
     no_env.setenv("OPENAI_API_KEY", "sk-test")
     assert llm.configured_name() == "openai" and llm.enabled()
-    assert llm.status()["enabled"] and llm.status()["choice"] == "auto"
+    assert llm.status()["enabled"] and llm.status()["choice"] == "openai"
     db.set_setting("llm_provider", "off")
     assert not llm.enabled()
     no_env.delenv("OPENAI_API_KEY")
@@ -71,29 +71,28 @@ def test_llm_is_on_by_default_when_a_key_is_available(no_env):
 
 def test_context_files_are_written_by_the_model(client, writer):
     fake = writer(Writer())
-    found = client.get("/contexts/file", params={"preset": "research"}).json()
+    found = contexts.build(preset_id="research")
     assert found["written_by"] == "fake-writer-1" and found["writer_note"] is None
     markdown = found["markdown"]
     assert markdown.startswith("# Research context · All history")
-    assert markdown.index("## Summary") < markdown.index("## Open threads") < markdown.index("## Recorded evidence")
-    assert "### Time by app" in markdown
+    assert markdown.index("## Summary") < markdown.index("## Open threads")
+    assert "## Recorded evidence" not in markdown
     system, user = fake.calls[0]
-    assert "Workflow: Research." in system and "Sources read, with URLs" in system
+    assert "Kind of work: Research." in system and "Sources read, with URLs" in system
     assert "Recorded evidence:" in user and "Cursor" in user
 
-    again = client.get("/contexts/export", params={"format": "md", "preset": "research"})
-    assert again.text == markdown and len(fake.calls) == 1
-    client.get("/contexts/file", params={"preset": "coding"})
-    assert len(fake.calls) == 2 and "Workflow: Software development." in fake.calls[1][0]
+    assert contexts.build(preset_id="research")["markdown"] == markdown and len(fake.calls) == 1
+    contexts.build(preset_id="coding")
+    assert len(fake.calls) == 2 and "Kind of work: Software development." in fake.calls[1][0]
 
 
 def test_writer_falls_back_without_a_model(client, writer):
-    plain = client.get("/contexts/file", params={"preset": "writing"}).json()
+    plain = contexts.build(preset_id="writing")
     assert plain["written_by"] is None and plain["writer_note"] is None
     assert "## Recorded evidence" not in plain["markdown"] and "## Time by app" in plain["markdown"]
 
     writer(Writer(llm.LLMError("HTTP 401: bad key")))
-    failed = client.get("/contexts/file", params={"preset": "writing"}).json()
+    failed = contexts.build(preset_id="writing")
     assert failed["written_by"] is None and failed["writer_note"] == "HTTP 401: bad key"
     generated = re.compile(r"Generated .* local time\.")
     assert generated.sub("", failed["markdown"]) == generated.sub("", plain["markdown"])
@@ -102,7 +101,7 @@ def test_writer_falls_back_without_a_model(client, writer):
     fake = writer(Writer())
     empty = client.post("/sessions", json={"duration": "1m", "label": "empty"}).json()
     client.post(f"/sessions/{empty['id']}/stop")
-    found = contexts.file("general", session_id=empty["id"])
+    found = contexts.build(preset_id="general", session_id=empty["id"])
     assert found["written_by"] is None and found["writer_note"] == "nothing was recorded in this scope" and not fake.calls
 
 

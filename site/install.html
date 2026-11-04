@@ -4,90 +4,52 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Install Chronicle</title>
-<link rel="icon" href="assets/icon.png">
-<link rel="stylesheet" href="style.css">
+<meta name="description" content="Install Chronicle with uv and open the app.">
+<meta property="og:title" content="Install Chronicle">
+<meta property="og:description" content="Install Chronicle with uv and open the app.">
+<meta property="og:image" content="https://aniketxdey.github.io/chronicle/assets/headline.png">
+<link rel="icon" href="assets/icon.png?v=2">
+<link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
 <header class="top"><div class="top-inner">
-  <a class="brand" href="./"><img src="assets/icon.png" alt="">Chronicle</a>
+  <a class="brand" href="./"><img src="assets/icon.png?v=2" alt="">Chronicle</a>
   <nav>
+    <a href="docs.html">Documentation</a>
     <a class="on" href="install.html">Install</a>
-    <a href="clients.html">Connect an agent</a>
-    <a href="guide.html">Guide</a>
     <a href="benchmark.html">Benchmark</a>
+    <a class="gh" href="https://github.com/aniketxdey/chronicle"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
   </nav>
-  <a class="gh" href="https://github.com/aniketxdey/chronicle">GitHub</a>
 </div></header>
 
-<main>
+<main class="narrow">
 <h1>Install</h1>
-<p class="lede">Chronicle is one Python package, <code>chronicle-context</code>, with a <code>chronicle</code> command. These steps install it, check what your machine can capture, and make a first recording.</p>
-
 <div class="os-switch" role="group" aria-label="Operating system">
   <button type="button" data-set="mac">macOS</button><button type="button" data-set="linux">Linux</button><button type="button" data-set="win">Windows</button>
 </div>
-
-<h2>1. Install uv and Chronicle</h2>
-<p>Chronicle needs Python 3.10 or newer. <a href="https://docs.astral.sh/uv/">uv</a> installs it in its own environment and is also what the packaged plugins use to start the server.</p>
 <pre data-os="mac linux"><code>curl -LsSf https://astral.sh/uv/install.sh | sh
-uv tool install "chronicle-context[graph]"</code></pre>
+uv tool install "chronicle-context[graph]"
+chronicle serve</code></pre>
 <pre data-os="win"><code>powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-uv tool install "chronicle-context[graph]"</code></pre>
-<p>If you prefer pipx: <code>pipx install "chronicle-context[graph]"</code>. The extras are optional:</p>
-<table>
-  <tr><th>Extra</th><th>Adds</th><th>Why</th></tr>
-  <tr><td><code>graph</code></td><td>scikit-learn, scipy, numpy</td><td>Better merging of near-duplicate graph nodes</td></tr>
-  <tr><td><code>llm</code></td><td>openai, python-dotenv</td><td>Model refinement of the graph and written context files (needs an OpenAI key)</td></tr>
-</table>
-<p>Without extras, the only dependencies are FastAPI and uvicorn.</p>
+uv tool install "chronicle-context[graph]"
+chronicle serve</code></pre>
+<p>Open <code>http://127.0.0.1:3030</code>. Chronicle needs Python 3.10 or newer.</p>
 
-<h2>2. Try the sample workday</h2>
-<p>This works on every platform and records nothing.</p>
-<pre><code>chronicle demo
-chronicle graph show
-chronicle context "finish the Acme export"</code></pre>
+<h2>Before you record</h2>
+<p data-os="mac">Give whatever runs Chronicle (your terminal, for example) <strong>Screen Recording</strong> and <strong>Accessibility</strong> under System Settings › Privacy &amp; Security.</p>
+<p data-os="linux">Capture needs X11 and is best effort. Install what you want recorded: <code>sudo apt install xdotool x11-utils scrot xclip xprintidle tesseract-ocr</code>.</p>
+<p data-os="win">Capture is best effort and needs no setup. For screen text, install <a href="https://tesseract-ocr.github.io/tessdoc/Installation.html">Tesseract</a> and put it on your <code>PATH</code>.</p>
+<p>Then run <code>chronicle doctor</code> to see what this machine can capture.</p>
 
-<h2>3. Set up capture</h2>
-<div data-os="mac">
-  <p>Grant <strong>Screen Recording</strong> and <strong>Accessibility</strong> under System Settings › Privacy &amp; Security to whatever runs Chronicle. That's your terminal for <code>chronicle record</code> and <code>chronicle serve</code>, or the MCP host app (Claude Desktop, Cursor, and so on) when the agent starts recording itself.</p>
-  <p>Browser URLs need a one-time Automation prompt per browser. Chronicle reads tabs from Safari, Chrome, Arc, Brave, Edge, Vivaldi, and Opera. Screen text comes from the Accessibility tree, with OCR as a fallback for apps that expose no text:</p>
-  <pre><code>brew install tesseract   # optional OCR</code></pre>
-</div>
-<div data-os="linux">
-  <p>Linux capture works on X11 and is best effort. Install the tools for what you want recorded:</p>
-  <pre><code>sudo apt install xdotool x11-utils     # window and title (xdotool, xprop): required
-sudo apt install scrot                 # screenshots; grim, gnome-screenshot, or ImageMagick import also work
-sudo apt install xclip xprintidle      # clipboard (or wl-paste) and idle time
-sudo apt install tesseract-ocr         # screen text</code></pre>
-  <p>On Linux, screen text comes only from OCR, and browser URLs are not read.</p>
-</div>
-<div data-os="win">
-  <p>Windows capture is best effort. Chronicle reads the front window, idle time, screenshots, and the clipboard through user32 and PowerShell, with no extra setup.</p>
-  <p>Screen text comes only from OCR, so install <a href="https://tesseract-ocr.github.io/tessdoc/Installation.html">Tesseract</a> and put <code>tesseract</code> on your <code>PATH</code>. Browser URLs are not read on Windows.</p>
-</div>
-<p>Then check what this machine can capture:</p>
-<pre><code>chronicle doctor</code></pre>
+<h2>Next</h2>
+<p><a href="docs.html#quickstart">Follow the quickstart</a>, <a href="docs.html#models">set up a model</a>, or <a href="docs.html#connect">connect an agent</a>.</p>
 
-<h2>4. Record</h2>
-<pre><code>chronicle record 30m --label "expense report"   # durations like 90s, 15m, 2h, 1h30m
-chronicle serve                                 # or use the web UI at http://127.0.0.1:3030</code></pre>
-<p>When a recording ends, Chronicle rebuilds its graph shard (and runs model refinement if an OpenAI key is set). Check what an agent would see with <code>chronicle context --session 1</code>, then <a href="clients.html">connect an agent</a>.</p>
-
-<h2>Optional: model refinement</h2>
-<p>Without a key, Chronicle runs fully offline. With one, a model types and links graph nodes and writes the context files. It sends window titles, URLs, and redacted screen text to OpenAI.</p>
-<pre data-os="mac linux"><code>uv tool install "chronicle-context[graph,llm]"
-echo "OPENAI_API_KEY=sk-..." >> ~/.chronicle/.env</code></pre>
-<pre data-os="win"><code>uv tool install "chronicle-context[graph,llm]"
-Add-Content "$HOME\.chronicle\.env" "OPENAI_API_KEY=sk-..."</code></pre>
-<p>Set <code>CHRONICLE_LLM=off</code> or use Settings › LLM refinement to turn it off. <code>OPENAI_BASE_URL</code> points it at any OpenAI-compatible server, such as Ollama.</p>
-
-<h2>Updating and uninstalling</h2>
+<h2>Update or remove</h2>
 <pre><code>uv tool upgrade chronicle-context
 uv tool uninstall chronicle-context</code></pre>
-<p>Uninstalling leaves your data in <code>~/.chronicle</code> (or <code>CHRONICLE_HOME</code>). Delete that folder to remove every recording, screenshot, and graph.</p>
+<p>Uninstalling keeps your data in <code>~/.chronicle</code>. Delete that folder to remove it.</p>
 </main>
-
-<footer><div>Chronicle is MIT licensed. <a href="https://github.com/aniketxdey/chronicle/issues">Report an issue</a>.</div></footer>
-<script src="site.js"></script>
+<footer><div>Chronicle is MIT licensed. Built by <a href="https://github.com/aniketxdey">Aniket Dey</a>. <a href="https://github.com/aniketxdey/chronicle/issues">Report an issue</a>.</div></footer>
+<script src="site.js?v=6"></script>
 </body>
 </html>

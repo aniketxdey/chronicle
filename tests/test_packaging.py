@@ -54,3 +54,7 @@ def test_tools_have_directory_annotations():
         hints = tool.get("annotations", {})
         assert tool.get("title"), tool["name"]
         assert hints.get("readOnlyHint") or "destructiveHint" in hints, tool["name"]
+
+
+def test_the_app_and_site_share_one_logo():
+    assert (ROOT / "chronicle/web/icon.svg").read_text() == (ROOT / "docs/assets/icon.svg").read_text()
