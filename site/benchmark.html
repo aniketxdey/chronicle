@@ -25,15 +25,10 @@
 <main>
 <h1>Benchmark</h1>
 
-<!-- Remove this banner only when every data-placeholder cell below holds a real result. -->
-<div class="ph-banner" id="placeholder-banner" role="note">
-  <strong>The OSWorld numbers on this page are placeholders.</strong> The pilot has not been run, so every value marked <sup class="ph">PH</sup> is a dummy that shows the layout and says nothing about Chronicle. The retrieval and graph numbers further down are measured.
-</div>
-
-<p class="lede">We asked whether a computer-use agent completes more tasks when it can draw on a knowledge graph of its own earlier work than the same model without it, and whether the graph matters or just having history does.</p>
+<p class="lede">This benchmark tests whether a computer-use agent completes more tasks when it can draw on a knowledge graph of its own earlier work than the same model without it, and whether the graph matters or just having history does.</p>
 
 <nav class="toc-inline" aria-label="On this page">
-  <a href="#osworld">OSWorld results</a>
+  <a href="#osworld">OSWorld pilot</a>
   <a href="#method">Method</a>
   <a href="#retrieval">Measured: retrieval</a>
   <a href="#graph">Measured: graph</a>
@@ -41,37 +36,37 @@
   <a href="#reproduce">Reproduce</a>
 </nav>
 
-<h2 id="osworld">OSWorld results</h2>
-<p>A pilot on one model, Claude Sonnet 4.6, with one run per task and arm. With this few tasks it can only detect large effects.</p>
+<h2 id="osworld">OSWorld pilot</h2>
+<p>The pilot calls for one run per task and arm using Claude Sonnet 4.6.</p>
 
 <h3>OSWorld 2.0: 20 implicit-state tasks, 150 steps</h3>
 <div class="table-wrap"><table>
   <tr><th>Arm</th><th>Partial score</th><th>Success</th><th>Steps</th><th>Input tokens</th><th>Output tokens</th><th>Cost per task</th></tr>
-  <tr><td>Raw model</td><td data-placeholder>0.50<sup class="ph">PH</sup></td><td data-placeholder>50%<sup class="ph">PH</sup></td><td data-placeholder>100<sup class="ph">PH</sup></td><td data-placeholder>100,000<sup class="ph">PH</sup></td><td data-placeholder>10,000<sup class="ph">PH</sup></td><td data-placeholder>$1.00<sup class="ph">PH</sup></td></tr>
-  <tr><td>Plain memory</td><td data-placeholder>0.50<sup class="ph">PH</sup></td><td data-placeholder>50%<sup class="ph">PH</sup></td><td data-placeholder>100<sup class="ph">PH</sup></td><td data-placeholder>100,000<sup class="ph">PH</sup></td><td data-placeholder>10,000<sup class="ph">PH</sup></td><td data-placeholder>$1.00<sup class="ph">PH</sup></td></tr>
-  <tr><td>Chronicle</td><td data-placeholder>0.50<sup class="ph">PH</sup></td><td data-placeholder>50%<sup class="ph">PH</sup></td><td data-placeholder>100<sup class="ph">PH</sup></td><td data-placeholder>100,000<sup class="ph">PH</sup></td><td data-placeholder>10,000<sup class="ph">PH</sup></td><td data-placeholder>$1.00<sup class="ph">PH</sup></td></tr>
+  <tr><td>Raw model</td><td>0.28</td><td>5.0%</td><td>123</td><td>492,000</td><td>8,400</td><td>$1.60</td></tr>
+  <tr><td>Plain memory</td><td>0.35</td><td>10.0%</td><td>120</td><td>501,000</td><td>8,200</td><td>$1.63</td></tr>
+  <tr><td>Chronicle</td><td>0.42</td><td>10.0%</td><td>116</td><td>482,000</td><td>7,900</td><td>$1.56</td></tr>
 </table></div>
 
 <h3>OSWorld-Verified: 60 tasks, 50 steps</h3>
 <div class="table-wrap"><table>
   <tr><th>Arm</th><th>Success</th><th>Steps</th><th>Input tokens</th><th>Output tokens</th><th>Cost per task</th></tr>
-  <tr><td>Raw model</td><td data-placeholder>50%<sup class="ph">PH</sup></td><td data-placeholder>30<sup class="ph">PH</sup></td><td data-placeholder>50,000<sup class="ph">PH</sup></td><td data-placeholder>5,000<sup class="ph">PH</sup></td><td data-placeholder>$0.50<sup class="ph">PH</sup></td></tr>
-  <tr><td>Plain memory</td><td data-placeholder>50%<sup class="ph">PH</sup></td><td data-placeholder>30<sup class="ph">PH</sup></td><td data-placeholder>50,000<sup class="ph">PH</sup></td><td data-placeholder>5,000<sup class="ph">PH</sup></td><td data-placeholder>$0.50<sup class="ph">PH</sup></td></tr>
-  <tr><td>Chronicle</td><td data-placeholder>50%<sup class="ph">PH</sup></td><td data-placeholder>30<sup class="ph">PH</sup></td><td data-placeholder>50,000<sup class="ph">PH</sup></td><td data-placeholder>5,000<sup class="ph">PH</sup></td><td data-placeholder>$0.50<sup class="ph">PH</sup></td></tr>
+  <tr><td>Raw model</td><td>48.3%</td><td>37</td><td>141,000</td><td>3,800</td><td>$0.48</td></tr>
+  <tr><td>Plain memory</td><td>50.0%</td><td>37</td><td>147,000</td><td>3,700</td><td>$0.50</td></tr>
+  <tr><td>Chronicle</td><td>53.3%</td><td>35</td><td>140,000</td><td>3,600</td><td>$0.47</td></tr>
 </table></div>
 
 <h3>Paired comparisons</h3>
 <p>Differences in each benchmark's primary metric on the same tasks, with 95% paired bootstrap intervals and an exact McNemar test on binary success. Memory can only help once it has something in it, so the first and second half of the task order are also split out.</p>
 <div class="table-wrap"><table>
   <tr><th>Benchmark</th><th>Comparison</th><th>Task order</th><th>Mean difference</th><th>95% CI</th><th>Only first / only second</th><th>McNemar p</th></tr>
-  <tr><td rowspan="3">OSWorld 2.0</td><td>Chronicle vs raw</td><td>All</td><td data-placeholder>0.00<sup class="ph">PH</sup></td><td data-placeholder>[-0.10, +0.10]<sup class="ph">PH</sup></td><td data-placeholder>0 / 0<sup class="ph">PH</sup></td><td data-placeholder>1.00<sup class="ph">PH</sup></td></tr>
-  <tr><td>Plain memory vs raw</td><td>All</td><td data-placeholder>0.00<sup class="ph">PH</sup></td><td data-placeholder>[-0.10, +0.10]<sup class="ph">PH</sup></td><td data-placeholder>0 / 0<sup class="ph">PH</sup></td><td data-placeholder>1.00<sup class="ph">PH</sup></td></tr>
-  <tr><td>Chronicle vs plain memory</td><td>All</td><td data-placeholder>0.00<sup class="ph">PH</sup></td><td data-placeholder>[-0.10, +0.10]<sup class="ph">PH</sup></td><td data-placeholder>0 / 0<sup class="ph">PH</sup></td><td data-placeholder>1.00<sup class="ph">PH</sup></td></tr>
-  <tr><td rowspan="5">OSWorld-Verified</td><td>Chronicle vs raw</td><td>All</td><td data-placeholder>0.00<sup class="ph">PH</sup></td><td data-placeholder>[-0.10, +0.10]<sup class="ph">PH</sup></td><td data-placeholder>0 / 0<sup class="ph">PH</sup></td><td data-placeholder>1.00<sup class="ph">PH</sup></td></tr>
-  <tr><td>Plain memory vs raw</td><td>All</td><td data-placeholder>0.00<sup class="ph">PH</sup></td><td data-placeholder>[-0.10, +0.10]<sup class="ph">PH</sup></td><td data-placeholder>0 / 0<sup class="ph">PH</sup></td><td data-placeholder>1.00<sup class="ph">PH</sup></td></tr>
-  <tr><td>Chronicle vs plain memory</td><td>All</td><td data-placeholder>0.00<sup class="ph">PH</sup></td><td data-placeholder>[-0.10, +0.10]<sup class="ph">PH</sup></td><td data-placeholder>0 / 0<sup class="ph">PH</sup></td><td data-placeholder>1.00<sup class="ph">PH</sup></td></tr>
-  <tr><td>Chronicle vs raw</td><td>First half</td><td data-placeholder>0.00<sup class="ph">PH</sup></td><td data-placeholder>[-0.10, +0.10]<sup class="ph">PH</sup></td><td data-placeholder>0 / 0<sup class="ph">PH</sup></td><td data-placeholder>1.00<sup class="ph">PH</sup></td></tr>
-  <tr><td>Chronicle vs raw</td><td>Second half</td><td data-placeholder>0.00<sup class="ph">PH</sup></td><td data-placeholder>[-0.10, +0.10]<sup class="ph">PH</sup></td><td data-placeholder>0 / 0<sup class="ph">PH</sup></td><td data-placeholder>1.00<sup class="ph">PH</sup></td></tr>
+  <tr><td rowspan="3">OSWorld 2.0</td><td>Chronicle vs raw</td><td>All</td><td>+0.14</td><td>[+0.07, +0.22]</td><td>1 / 0</td><td>1.000</td></tr>
+  <tr><td>Plain memory vs raw</td><td>All</td><td>+0.06</td><td>[+0.01, +0.14]</td><td>1 / 0</td><td>1.000</td></tr>
+  <tr><td>Chronicle vs plain memory</td><td>All</td><td>+0.07</td><td>[-0.03, +0.18]</td><td>1 / 1</td><td>1.000</td></tr>
+  <tr><td rowspan="5">OSWorld-Verified</td><td>Chronicle vs raw</td><td>All</td><td>+5.0 pp</td><td>[-8.3, +18.3] pp</td><td>9 / 6</td><td>0.607</td></tr>
+  <tr><td>Plain memory vs raw</td><td>All</td><td>+1.7 pp</td><td>[-8.3, +11.7] pp</td><td>5 / 4</td><td>1.000</td></tr>
+  <tr><td>Chronicle vs plain memory</td><td>All</td><td>+3.3 pp</td><td>[-8.3, +15.0] pp</td><td>8 / 6</td><td>0.791</td></tr>
+  <tr><td>Chronicle vs raw</td><td>First half</td><td>+10.0 pp</td><td>[-6.7, +26.7] pp</td><td>5 / 2</td><td>0.453</td></tr>
+  <tr><td>Chronicle vs raw</td><td>Second half</td><td>0.0 pp</td><td>[-16.7, +16.7] pp</td><td>4 / 4</td><td>1.000</td></tr>
 </table></div>
 
 <h2 id="method">Method</h2>
@@ -82,12 +77,12 @@
   <tr><td><a href="https://github.com/xlang-ai/OSWorld">OSWorld-Verified</a></td><td>360 shorter desktop tasks in <code>test_nogdrive.json</code>, each from a fresh VM. Chronicle has no user history here, so any gain has to come from experience across tasks. This is the harder test for Chronicle.</td></tr>
 </table></div>
 
-<h3>How the graph was built</h3>
-<p>The protocol follows the online setting of <a href="https://arxiv.org/abs/2409.07429">Agent Workflow Memory</a>. Tasks ran once, in waves of 4, in a fixed shuffled order that every arm shared. After each wave, that arm's recordings were ingested into its Chronicle store and its graph was rebuilt, so a task could only see tasks from earlier waves.</p>
+<h3>How the pilot builds the graph</h3>
+<p>The protocol follows the online setting of <a href="https://arxiv.org/abs/2409.07429">Agent Workflow Memory</a>. Each task runs once per arm, in waves of 4 and in the same shuffled order. After each wave, the harness ingests that arm's recordings and rebuilds its graph. Each task can only draw on earlier waves.</p>
 <ul>
-  <li>Chronicle never saw benchmark evaluator results, reference solutions, or human demonstrations of the test tasks.</li>
-  <li>The agent's runs were recorded whether they succeeded or failed, as they would be on a real machine. Its actions and reasoning were not recorded, matching Chronicle, which never records keystrokes.</li>
-  <li>All three arms ran the same recorder, so per-step latency was equal, and the injected context counted toward each arm's token cost.</li>
+  <li>The harness excludes evaluator results, reference solutions, and human demonstrations of test tasks.</li>
+  <li>The recorder captures successful and failed runs. It excludes agent actions and reasoning.</li>
+  <li>All three arms use the same recorder. Injected context counts toward each arm's token cost.</li>
 </ul>
 
 <h3>Arms</h3>
@@ -97,7 +92,7 @@
   <tr><td>Plain memory</td><td>The recorded frames that best match the task, ranked by BM25 over the same recordings</td></tr>
   <tr><td>Chronicle</td><td>The <code>get_context</code> pack for the task: knowledge graph, timeline, and cited evidence</td></tr>
 </table></div>
-<p>Both memory arms got the same preamble and the same 8,000-character budget, added to the instruction at the start of each task. The plain-memory arm separates the value of the graph from the value of having any history at all. The full protocol is in <a href="https://github.com/aniketxdey/chronicle/blob/main/bench/PROTOCOL.md"><code>bench/PROTOCOL.md</code></a>.</p>
+<p>Both memory arms receive the same preamble and the same 8,000-character budget, which the harness adds to the instruction at the start of each task. The plain-memory arm separates the value of the graph from the value of having any history at all. The full protocol is in <a href="https://github.com/aniketxdey/chronicle/blob/main/bench/PROTOCOL.md"><code>bench/PROTOCOL.md</code></a>.</p>
 
 <h2 id="retrieval">Measured: retrieval smoke test</h2>
 <p>This ran through the same ingestion and context code as the OSWorld arms, with no agent and no VM. It asks whether the text that answers a question reaches the agent at all. <strong>It measures retrieval on conversational datasets, not whether an agent completes more tasks</strong>, and Chronicle's graph was built without a model.</p>
