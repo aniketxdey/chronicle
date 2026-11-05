@@ -1,19 +1,21 @@
-const VIEWS = ["recordings", "harnesses", "contexts", "workflows", "integrations", "settings"];
+const VIEWS = ["knowledge", "harnesses", "contexts", "workflows", "integrations", "sources", "settings"];
 const TITLES = {
-  recordings: "Recordings",
+  knowledge: "Knowledge",
   harnesses: "Harnesses",
   contexts: "Contexts",
   workflows: "Workflows",
   integrations: "Integrations",
+  sources: "Privacy & Sources",
   settings: "Settings",
 };
-const NAV_GROUPS = [["Build", ["recordings", "harnesses"]], ["Library", ["contexts", "workflows"]], ["Connect", ["integrations", "settings"]]];
+const NAV_GROUPS = [["", ["knowledge"]], ["Build", ["harnesses", "contexts", "workflows"]], ["Connect", ["integrations", "sources", "settings"]]];
 const ICONS = {
-  recordings: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3" fill="currentColor"/>',
+  knowledge: '<circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.2 11l7.6-4M8.2 13l7.6 4"/>',
   harnesses: '<path d="M12 3 21 8l-9 5-9-5z"/><path d="m3 12.5 9 5 9-5M3 17l9 5 9-5"/>',
   contexts: '<path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4M9 12h7M9 16h7"/>',
   workflows: '<rect x="3" y="4" width="6" height="5"/><rect x="15" y="4" width="6" height="5"/><rect x="9" y="15" width="6" height="5"/><path d="M6 9v3h12V9M12 12v3"/>',
   integrations: '<path d="M9 3v5M15 3v5M7 8h10v4a5 5 0 0 1-10 0zM12 17v4"/>',
+  sources: '<path d="M12 3l8 3v6c0 4.5-3.2 7.7-8 9-4.8-1.3-8-4.5-8-9V6z"/><circle cx="12" cy="11" r="2.4" fill="currentColor"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/>',
   mini: '<rect x="3" y="5" width="18" height="14" rx="1.5"/><rect x="12" y="12" width="6" height="4" fill="currentColor"/>',
 };
@@ -27,24 +29,9 @@ const RECORDING_TABS = [
 // Low-level kinds stay out of the graph until asked for; they remain in each node's lists.
 const DETAIL_KINDS = new Set(["window", "identifier", "query", "task", "topic_cluster"]);
 const SHADES = ["#fafafa", "#cfcfcf", "#a6a6a6", "#808080", "#5e5e5e", "#454545", "#333333"];
-const KIND_STYLE = {
-  app: { fill: "#fafafa" },
-  person: { fill: "#fafafa", ring: true },
-  site: { fill: "#c8c8c8" },
-  page: { fill: "#9e9e9e" },
-  project: { fill: "#c8c8c8", ring: true },
-  customer: { fill: "#e6e6e6", ring: true },
-  ticket: { fill: "#7a7a7a" },
-  pr: { fill: "#7a7a7a", ring: true },
-  file: { fill: "#8f8f8f" },
-  identifier: { fill: "#5c5c5c" },
-  query: { fill: "#000000", stroke: "#fafafa" },
-  topic: { fill: "#000000", stroke: "#a6a6a6" },
-  meeting: { fill: "#000000", stroke: "#fafafa", ring: true },
-  window: { fill: "#3a3a3a" },
-  session: { fill: "#262626", stroke: "#fafafa" },
-};
 const PRESETS_DURATION = ["5m", "15m", "30m", "1h", "2h", "4h"];
+const BRAIN_PROMPTS = ["What have I been working on lately?", "What's still unfinished?", "Build a harness for my main line of work"];
+const closeX = (attrs = 'data-act="close"') => `<button class="x-btn" type="button" ${attrs} aria-label="Close" title="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>`;
 const PROMPTS = ["What was I working on?", "What's still unfinished?", "Which files and links mattered most?"];
 const GRAPH_FORMATS = [["json", "JSON"], ["md", "Text"], ["graphml", "GraphML"], ["cypher", "Cypher"]];
 const DESTINATIONS = [
@@ -58,7 +45,6 @@ const DESTINATIONS = [
   { name: "Neo4j", how: "Paste into Neo4j Browser or run with cypher-shell.", format: "cypher" },
   { name: "Gephi, yEd, Cytoscape", how: "Open the GraphML file to lay out and explore the graph.", format: "graphml" },
 ];
-const HARNESS_EXAMPLES = ["Recruiting", "Quant research", "Investor relations", "Customer support"];
 const PACKAGES = [
   { name: "Claude plugin", body: "Claude Code, Claude Desktop, and Cowork", cmd: "claude plugin marketplace add aniketxdey/chronicle\nclaude plugin install chronicle@chronicle" },
   { name: "Gemini CLI extension", body: "Installs the server and its instructions", cmd: "gemini extensions install https://github.com/aniketxdey/chronicle" },
@@ -68,8 +54,10 @@ const PACKAGES = [
 
 const state = {
   ready: false,
-  view: "recordings",
-  landing: false,
+  view: "knowledge",
+  brain: null,
+  chatIds: {},
+  chatsRestored: new Set(),
   step: 0,
   settings: null,
   health: null,
@@ -336,7 +324,7 @@ function closeDrawer() {
 /* Routing */
 
 function hashFor() {
-  if (state.view === "recordings" && state.ctx) return `#recordings/${state.ctx.kind === "all" ? "all" : state.ctx.id}/${state.ctx.tab}`;
+  if (state.view === "knowledge" && state.ctx) return `#knowledge/${state.ctx.kind === "all" ? "all" : state.ctx.id}/${state.ctx.tab}`;
   if (state.view === "harnesses" && state.wizard) return "#harnesses/new";
   if (state.view === "harnesses" && state.ide) return `#harnesses/${state.ide.id}`;
   if (state.view === "contexts" && state.doc) return `#contexts/${state.doc.id}`;
@@ -346,9 +334,9 @@ function hashFor() {
 
 function readHash() {
   const parts = location.hash.replace("#", "").split("/").filter(Boolean);
-  const view = VIEWS.includes(parts[0]) ? parts[0] : "recordings";
+  if (parts[0] === "recordings") parts[0] = "knowledge"; // Links saved before the rename.
+  const view = VIEWS.includes(parts[0]) ? parts[0] : "knowledge";
   state.view = view;
-  state.landing = !parts.length;
   state.ctx = null;
   state.doc = null;
   state.flow = null;
@@ -356,7 +344,7 @@ function readHash() {
   state.wizard = null;
   if (view === "harnesses" && parts[1] === "new") state.wizard = newWizard();
   if (view === "harnesses" && Number(parts[1])) state.ide = newIde(Number(parts[1]));
-  if (view === "recordings" && parts[1]) state.ctx = parts[1] === "all" ? newCtx("all", null, parts[2]) : newCtx("session", Number(parts[1]), parts[2]);
+  if (view === "knowledge" && parts[1]) state.ctx = parts[1] === "all" ? newCtx("all", null, parts[2]) : newCtx("session", Number(parts[1]), parts[2]);
   if (view === "contexts" && Number(parts[1])) state.doc = { id: Number(parts[1]) };
   if (view === "workflows" && Number(parts[1])) state.flow = { id: Number(parts[1]) };
 }
@@ -386,7 +374,10 @@ async function loadContext() {
   ctx.detail = await api(`/contexts/detail${qs(ctxScope())}`);
   await loadArtifacts();
   if (!state.presets) state.presets = (await api("/contexts/presets")).data;
-  if (ctx.tab === "graph") await loadCtxGraph();
+  if (ctx.tab === "graph") {
+    await loadCtxGraph();
+    await restoreChat();
+  }
   if (ctx.tab === "meetings" && !state.speakers) state.speakers = await api("/speakers/unnamed");
 }
 
@@ -400,6 +391,12 @@ async function loadArtifacts() {
   ctx.artifacts = { contexts: saved.data, workflows: flows.data };
 }
 
+async function loadBrain() {
+  const [graph, llm] = await Promise.all([api("/graph?limit=160"), api("/llm/status")]);
+  state.brain = { ...state.brain, graph };
+  state.llm = llm;
+}
+
 async function loadCtxGraph() {
   const ctx = state.ctx;
   const session = ctxGraphSession();
@@ -409,18 +406,26 @@ async function loadCtxGraph() {
 }
 
 async function loadView(view) {
-  if (view === "recordings") {
+  state.graphExpanded = false;
+  state.historyOpen = false;
+  state.legendFocus = null;
+  if (!state.legend) state.legend = await api("/legend");
+  if (!state.clusters) {
+    state.clusters = await api("/graph/clusters");
+    nameClusters();
+  }
+  if (view === "sources") {
+    state.sources = await api("/sources");
+    state.summaryPending = true;
+  }
+  if (view === "knowledge") {
     await loadSessions(100);
-    if (state.landing) {
-      state.landing = false;
-      const latest = (state.sessions.data || []).find((item) => item.frames > 0);
-      if (latest) {
-        state.ctx = newCtx("session", latest.id, "graph");
-        history.replaceState(null, "", hashFor());
-      }
-    }
     if (state.ctx) await loadContext();
-    else state.capture = await api("/capture/status");
+    else {
+      state.capture = await api("/capture/status");
+      await loadBrain();
+      await restoreChat();
+    }
   }
   if (view === "harnesses") {
     state.llm = await api("/llm/status");
@@ -456,7 +461,7 @@ async function loadView(view) {
     state.settings = await api("/settings");
   }
   state.health = await api("/health");
-  if (view === "recordings" && !state.ctx) await loadLiveStats();
+  if (view === "knowledge" && !state.ctx) await loadLiveStats();
 }
 
 async function loadLiveStats() {
@@ -471,7 +476,7 @@ function startPolling() {
       const before = state.health?.recording?.id || null;
       state.health = await api("/health");
       const after = state.health.recording?.id || null;
-      if (state.view === "recordings" && !state.ctx) {
+      if (state.view === "knowledge" && !state.ctx) {
         await loadLiveStats();
         if (before !== after) {
           await loadSessions(100);
@@ -510,7 +515,7 @@ async function go(view, extra = {}) {
 }
 
 async function openRecording(id, tab = "graph") {
-  await go("recordings", { ctx: newCtx(id ? "session" : "all", id, tab) });
+  await go("knowledge", { ctx: newCtx(id ? "session" : "all", id, tab) });
 }
 
 async function openDoc(id) {
@@ -565,14 +570,14 @@ function onboardingHtml() {
 }
 
 function shellHtml() {
-  const nav = NAV_GROUPS.map(([label, views]) => `<div class="nav-group"><p class="nav-label">${label}</p>${views.map((view) => `<button class="nav-btn" type="button" data-act="nav" data-view="${view}" title="${TITLES[view]}">${icon(view)}<span>${TITLES[view]}</span></button>`).join("")}</div>`).join("");
+  const nav = NAV_GROUPS.map(([label, views]) => `<div class="nav-group">${label ? `<p class="nav-label">${label}</p>` : ""}${views.map((view) => `<button class="nav-btn" type="button" data-act="nav" data-view="${view}" title="${TITLES[view]}">${icon(view)}<span>${TITLES[view]}</span></button>`).join("")}</div>`).join("");
   return `<div class="shell">
     <aside class="side">
-      <div class="brand"><img class="logo" src="/static/icon.svg?v=2" alt="" /><div><strong>Chronicle</strong><span>your context for every agent</span></div></div>
+      <div class="brand"><img class="logo" src="/static/icon.svg?v=5" alt="" /><div><strong>Chronicle</strong></div></div>
       <nav class="nav">${nav}</nav>
       <div class="side-rec">
         <button class="nav-btn" type="button" data-act="mini-open" title="Open mini window">${icon("mini")}<span>Mini window</span></button>
-        <button class="rec" type="button" data-act="nav" data-view="recordings" title="Recording status"><i id="rec-dot" class="dot"></i><span id="rec-label">Not recording</span></button>
+        <button class="rec" type="button" data-act="nav" data-view="knowledge" title="Recording status"><i id="rec-dot" class="dot"></i><span id="rec-label">Not recording</span></button>
       </div>
     </aside>
     <main class="main">
@@ -587,12 +592,13 @@ function shellHtml() {
 
 function crumbs() {
   const parts = [`<button type="button" data-act="nav" data-view="${state.view}">${esc(TITLES[state.view])}</button>`];
-  const here = state.view === "recordings" && state.ctx ? ctxTitle() : state.view === "contexts" ? state.doc?.title : state.view === "workflows" ? state.flow?.title : state.view === "harnesses" ? (state.wizard ? "New harness" : state.ide?.data?.name) : null;
+  const here = state.view === "knowledge" && state.ctx ? ctxTitle() : state.view === "contexts" ? state.doc?.title : state.view === "workflows" ? state.flow?.title : state.view === "harnesses" ? (state.wizard ? "New harness" : state.ide?.data?.name) : null;
   if (here) parts.push(`<span>${esc(here)}</span>`);
   return parts.join('<i>/</i>');
 }
 
 function syncChrome() {
+  document.body.dataset.theme = state.view;
   document.querySelectorAll(".nav [data-act=nav]").forEach((button) => {
     button.classList.toggle("is-on", button.dataset.view === state.view);
   });
@@ -643,7 +649,7 @@ function stat(label, value) {
   return `<div class="stat"><span class="label">${esc(label)}</span><strong>${esc(value)}</strong></div>`;
 }
 
-/* Recordings */
+/* Knowledge: the all-history graph and its chat, then the recordings */
 
 function recordingsHtml() {
   if (state.ctx) return recordingHtml();
@@ -690,13 +696,15 @@ function recordingsHtml() {
     )
     .join("");
   const all = state.health?.frames ? `<tr class="click" data-act="open-recording" data-id=""><td><strong>All history</strong></td><td></td><td></td><td class="num">${state.health.frames}</td><td></td><td></td><td></td><td></td></tr>` : "";
-  return `<div class="stack">
-    ${pageHead("Recordings")}
+  return `<div class="stack knowledge">
+    ${pageHead("Knowledge")}
+    ${state.health?.frames ? brainHtml() : ""}
+    <h2 class="section-title">Recordings</h2>
     ${live}
     ${active ? `<div class="stats live-stats" id="live-stats">${liveStatsHtml()}</div>` : ""}
     ${capture.last_error ? `<p class="banner">${esc(capture.last_error)}</p>` : ""}
     ${state.health?.frames ? "" : emptyHtml()}
-    ${state.health?.frames ? section("Recordings", `<table class="table"><thead><tr><th>Recording</th><th>Started</th><th class="num">Length</th><th class="num">Frames</th><th class="num">Events</th><th class="num">Contexts</th><th>Status</th><th></th></tr></thead><tbody>${rows}${all}</tbody></table>`) : ""}
+    ${state.health?.frames ? section("All recordings", `<table class="table"><thead><tr><th>Recording</th><th>Started</th><th class="num">Length</th><th class="num">Frames</th><th class="num">Events</th><th class="num">Contexts</th><th>Status</th><th></th></tr></thead><tbody>${rows}${all}</tbody></table>`) : ""}
     ${section(
       "This machine",
       `<div class="pills">${capRow}</div>
@@ -704,6 +712,94 @@ function recordingsHtml() {
       `,
     )}
   </div>`;
+}
+
+const HISTORY_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.6-5.9L4 8.5M4 4v4.5h4.5M12 8v4.5l3 1.8"/></svg>';
+
+function chatHistoryHtml() {
+  if (!state.historyOpen) return "";
+  const list = state.chatHistory;
+  const current = state.chatIds[chatKey()];
+  const rows = !list
+    ? '<p class="faint">Loading…</p>'
+    : list.map((item) => `<div class="history-row ${item.id === current ? "is-on" : ""}"><button class="history-open" type="button" data-act="history-open" data-id="${item.id}"><strong>${esc(item.title)}</strong><span class="faint">${esc(stamp(item.updated_at))}</span></button>${closeX(`data-act="history-delete" data-id="${item.id}"`).replace('aria-label="Close" title="Close"', `aria-label="Delete ${esc(item.title)}" title="Delete"`)}</div>`).join("") || '<p class="faint">No chats yet.</p>';
+  return `<div class="chat-history"><div class="history-list">${rows}</div></div>`;
+}
+
+function chatToolsHtml() {
+  const fresh = chatTurns().length ? '<button class="btn sm" type="button" data-act="chat-clear">New chat</button>' : "";
+  const history = `<button class="btn sm history-btn ${state.historyOpen ? "is-on" : ""}" type="button" data-act="history-toggle" aria-label="History" title="History" aria-expanded="${Boolean(state.historyOpen)}">${HISTORY_ICON}</button>`;
+  return `${fresh}${history}${state.graphExpanded ? closeX('data-act="graph-expand"') : ""}`;
+}
+
+function paintChatTools() {
+  const tools = $(".chat-head-tools");
+  if (tools) tools.innerHTML = chatToolsHtml();
+  const slot = $("#chat-history-slot");
+  if (slot) slot.innerHTML = chatHistoryHtml();
+}
+
+function chatSidebar() {
+  const brain = chatKey() === "brain";
+  const make = brain ? '<div class="brain-make"><button class="btn sm" type="button" data-act="harness-new">Build a harness</button><button class="btn sm" type="button" data-act="context-new">Write a context</button><button class="btn sm" type="button" data-act="workflow-new" data-session="">Make a workflow</button></div>' : "";
+  return `<aside class="brain-chat">
+        <div class="chat-top">
+          <div class="chat-head"><div class="chat-head-tools">${chatToolsHtml()}</div></div>
+          <div id="chat-history-slot">${chatHistoryHtml()}</div>
+        </div>
+        <div id="chat-thread" class="chat-thread brain-thread">${threadHtml()}</div>
+        <form class="inline" data-form="chat"><input id="chat-input" name="question" placeholder="${brain ? "Ask, or say what to build" : "Ask what happened or what's unfinished"}" autocomplete="off" /><button class="btn primary" type="submit">Ask</button></form>
+        ${make}
+      </aside>`;
+}
+
+/* Chats are saved as soon as they're sent, and updated as replies arrive, so each one is in Agent history and survives a reload. */
+async function saveChat(key = chatKey()) {
+  const turns = (state.chats[key] || []).filter((turn) => !turn.pending).map((turn) => ({
+    ...turn,
+    proposals: turn.proposals?.map((item) => (item.status === "running" ? { ...item, status: undefined } : item)),
+  }));
+  if (!turns.length) return;
+  try {
+    const saved = await api("/brain/chats", { method: "POST", body: JSON.stringify({ id: state.chatIds[key] || null, scope: key, turns }) });
+    state.chatIds[key] = saved.id;
+    if (state.historyOpen && key === chatKey()) await loadChatHistory();
+  } catch (error) {
+    toast(error.message || "Couldn't save this chat");
+  }
+}
+
+async function loadChatHistory() {
+  state.chatHistory = (await api(`/brain/chats${qs({ scope: chatKey() })}`)).data;
+  paintChatTools();
+}
+
+function showChat(key, chat) {
+  state.chats[key] = chat.turns;
+  state.chatIds[key] = chat.id;
+  if (key === "brain") {
+    const last = [...chat.turns].reverse().find((turn) => turn.role === "assistant");
+    state.chatFocus = new Set((last?.nodes || []).map((node) => node.id));
+  }
+}
+
+/* Pick up the latest conversation after a reload, once per chat. */
+async function restoreChat() {
+  const key = chatKey();
+  if (state.chatsRestored.has(key) || state.chats[key]?.length) return;
+  state.chatsRestored.add(key);
+  const latest = (await api(`/brain/chats${qs({ scope: key })}`)).data[0];
+  if (latest && !state.chats[key]?.length) showChat(key, await api(`/brain/chats/${latest.id}`));
+}
+
+function brainHtml() {
+  if (state.graphExpanded) return "";
+  const selected = state.brain?.node;
+  return `${GRAPH_CAPTION}<section class="brain">
+      <div class="brain-graph">${graphCanvas()}</div>
+      ${chatSidebar()}
+    </section>
+    ${selected ? `<div class="actions"><button class="btn sm" type="button" data-act="brain-node-clear">Clear selection</button></div>${nodePanel()}` : ""}`;
 }
 
 function liveStatsHtml() {
@@ -822,26 +918,89 @@ function contextsHtml() {
     .map((item) => `<tr class="click" data-act="open-doc" data-id="${item.id}"><td><strong>${esc(item.title)}</strong></td><td><span class="tag">${esc(presetTitle(item.preset))}</span></td><td>${esc(sourceLabel(item))}</td><td>${esc(stamp(item.created_at))}</td></tr>`)
     .join("");
   return `<div class="stack">
-    ${pageHead("Contexts", "", '<button class="btn primary" type="button" data-act="context-new">Generate</button>')}
+    ${pageHead("Contexts", "", '<button class="btn primary" type="button" data-act="context-new">New</button>')}
     ${section("Context files", `<table class="table"><thead><tr><th>File</th><th>Kind of work</th><th>From</th><th>Created</th></tr></thead><tbody>${rows || '<tr><td colspan="4" class="muted">No context files yet.</td></tr>'}</tbody></table>`)}
   </div>`;
 }
+
+/* Suggestions for the new context file and new workflow forms */
+
+function suggestBox() {
+  return '<section class="suggest" id="suggest-box"></section>';
+}
+
+function suggestInner() {
+  const found = state.fieldSuggest;
+  if (!found) return "";
+  const button = `<button class="btn sm" type="button" data-act="suggest-rest" ${found.loading ? "disabled" : ""}>Fill in the rest from what I've typed</button>`;
+  const head = `<div class="inline spread"><span class="label">Suggested from your knowledge graph</span>${button}</div>`;
+  if (found.loading) return `${head}<p class="faint">Reading your knowledge graph…</p>`;
+  const cards = found.options.map((item, index) => `<button class="suggest-card" type="button" data-act="suggest-apply" data-index="${index}"><strong>${esc(item.name)}</strong>${item.description ? `<span class="muted">${esc(item.description)}</span>` : ""}<span class="faint">${esc(proposalSources({ ...item, new_workflows: [] }))}</span></button>`).join("");
+  return `${head}${cards ? `<div class="suggest-cards">${cards}</div>` : `<p class="faint">${esc(found.error ? `The model couldn't suggest anything: ${found.error}` : "Nothing to suggest yet.")}</p>`}`;
+}
+
+function paintSuggest() {
+  const box = $("#suggest-box");
+  if (box) box.innerHTML = suggestInner();
+}
+
+function formFields(form) {
+  const data = new FormData(form);
+  const numbers = (name) => data.getAll(name).map(Number);
+  return { name: String(data.get("name") || ""), description: String(data.get("description") || data.get("purpose") || ""), session_ids: numbers("session"), context_ids: numbers("context"), workflow_ids: numbers("workflow") };
+}
+
+async function askSuggestions(kind, typed = {}) {
+  const ask = {};
+  state.fieldSuggest = { kind, ask, loading: true, options: state.fieldSuggest?.options || [] };
+  paintSuggest();
+  let found;
+  try {
+    found = await api("/brain/suggest", { method: "POST", body: JSON.stringify({ kind, ...typed }) });
+  } catch (error) {
+    found = { options: [], error: error.message || "Request failed" };
+  }
+  if (state.fieldSuggest?.ask !== ask) return null;
+  state.fieldSuggest = { kind, ...found };
+  paintSuggest();
+  return found;
+}
+
+function applySuggestion(form, item, onlyBlank = false) {
+  const set = (field, value) => {
+    if (field && value && !(onlyBlank && field.value.trim())) field.value = value;
+  };
+  set(form.elements.name, item.name);
+  set(form.elements.description || form.elements.purpose, item.description);
+  for (const [name, ids] of [["session", item.session_ids], ["context", item.context_ids], ["workflow", item.workflow_ids]]) {
+    form.querySelectorAll(`input[name=${name}]`).forEach((box) => {
+      const on = ids.includes(Number(box.value));
+      box.checked = on;
+      box.closest(".pick")?.classList.toggle("is-suggested", on);
+    });
+  }
+}
+
+const pickActions = (name) => `<div class="pick-actions"><button class="link" type="button" data-act="pick-all" data-name="${name}">All</button><button class="link" type="button" data-act="pick-none" data-name="${name}">None</button></div>`;
 
 function contextDialog(session) {
   const recordings = (state.sessions?.data || []).filter((item) => item.frames > 0);
   const only = recordings.length === 1;
   const pick = (name, id, title, meta, on) => `<label class="pick"><input type="checkbox" name="${name}" value="${id}" ${on ? "checked" : ""} /><span><strong>${esc(title)}</strong>${meta ? `<span class="faint">${esc(meta)}</span>` : ""}</span></label>`;
-  const group = (label, name, rows, empty) => `<fieldset class="picks"><legend><span class="label">${label}</span><button class="link" type="button" data-act="pick-all" data-name="${name}">All</button><button class="link" type="button" data-act="pick-none" data-name="${name}">None</button></legend><div class="pick-list">${rows || `<p class="faint">${empty}</p>`}</div></fieldset>`;
+  const group = (label, name, rows, empty) => `<fieldset class="picks"><legend><span class="label">${label}</span></legend><div class="pick-list">${rows || `<p class="faint">${empty}</p>`}</div>${pickActions(name)}</fieldset>`;
   const sessionRows = recordings.map((item) => pick("session", item.id, item.label || `Recording ${item.id}`, stamp(item.started_at), only || String(item.id) === session)).join("");
   const contextRows = (state.saved || []).map((item) => pick("context", item.id, item.title, sourceLabel(item), false)).join("");
   const flowRows = (state.workflows?.data || []).map((item) => pick("workflow", item.id, item.title, "", false)).join("");
-  return `<div class="backdrop center" data-act="close"><form class="modal" data-sheet data-form="context-new">
-    <header><h2>New context file</h2><button class="btn sm" type="button" data-act="close">Close</button></header>
+  return `<div class="backdrop center" data-act="close"><form class="modal wide" data-sheet data-form="context-new">
+    <header><h2>New context file</h2>${closeX()}</header>
+    ${suggestBox("context")}
     <label class="field">Name<input name="name" placeholder="Researching job companies" autocomplete="off" required /></label>
-    <label class="field">Description of the work<textarea name="description" rows="3" placeholder="What is this session of work, and what should an agent know going in?"></textarea></label>
+    <label class="field">Description of the work<textarea name="description" rows="4" placeholder="What is this session of work, and what should an agent know going in?"></textarea></label>
+    <div class="modal-picks three">
     ${group("Recordings to look at", "session", sessionRows, "No recordings yet.")}
     ${group("Earlier contexts to look at", "context", contextRows, "No context files yet.")}
     ${group("Workflows to use", "workflow", flowRows, "No workflows yet.")}
+    </div>
     <p class="wiz-note" id="context-note"></p>
     <div class="actions"><button class="btn primary" type="submit">Generate</button></div>
   </form></div>`;
@@ -875,7 +1034,7 @@ function docHtml() {
 function graphSection(title, kind, id, data) {
   return section(
     title,
-    `${data?.nodes?.length ? '<canvas id="graph3d" class="graph3d small" role="img" aria-label="Knowledge graph. Drag to rotate, select a node to open it."></canvas>' : '<p class="muted">No graph nodes matched this one.</p>'}
+    `${data?.nodes?.length ? graphCanvas(true) : '<p class="muted">No graph nodes matched this one.</p>'}
     <div class="actions"><span class="label">Download</span>${graphLinks(kind, id)}</div>`,
   );
 }
@@ -920,21 +1079,17 @@ function ctxMeetingsHtml() {
 }
 
 function kindSwatch(kind) {
-  const style = KIND_STYLE[kind] || { fill: "#808080" };
-  return `<i class="swatch" style="background:${style.fill};${style.stroke ? `box-shadow:inset 0 0 0 1.5px ${style.stroke}` : ""}"></i>`;
+  const category = legendCategories().find((item) => item.kinds.includes(kind)) || legendCategories().find((item) => item.id === "other");
+  return `<i class="orb" style="--orb:${esc(category?.color || "#ff8a1f")}"></i>`;
 }
 
 /* A 3D particle simulation on a canvas: black and white, no libraries. */
 
-const sim = { key: "", points: [], links: [], yaw: 0.6, pitch: 0.34, spin: 0, touched: 0, zoom: 1, alpha: 1, drag: null, hover: null, raf: 0, canvas: null, screen: [], maxWeight: 1 };
-const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-const CAMERA = 470;
-const FLOOR_Y = 235;
-const TAU = Math.PI * 2;
 const clamp = (value, low = 0, high = 1) => Math.max(low, Math.min(high, value));
 
 function graphHost() {
-  if (state.view === "recordings" && state.ctx?.tab === "graph") return state.ctx;
+  if (state.view === "knowledge" && state.ctx?.tab === "graph") return state.ctx;
+  if (state.view === "knowledge" && !state.ctx) return state.brain;
   if (state.view === "contexts" && state.doc) return state.doc;
   if (state.view === "workflows" && state.flow) return state.flow;
   if (state.view === "harnesses" && state.ide) return ideGraphHost();
@@ -946,7 +1101,29 @@ function hostSession(host) {
   return host === state.doc ? host.session_id || "" : "";
 }
 
+/* The legend: what each node is called and which category it's in, wherever a graph is drawn */
+
+function legendCategories() {
+  return state.legend?.categories || [];
+}
+
+function categoryFor(node) {
+  const items = legendCategories();
+  const chosen = state.legend?.overrides?.[node.id]?.category;
+  return items.find((item) => item.id === chosen) || items.find((item) => item.kinds.includes(node.kind)) || items.find((item) => item.id === "other") || null;
+}
+
+function decorateNode(node) {
+  const category = categoryFor(node);
+  return { ...node, label: state.legend?.overrides?.[node.id]?.label || node.label, category: category?.id, color: category?.color || "#ff8a1f" };
+}
+
 function visibleGraph() {
+  const { nodes, edges } = shownGraph();
+  return { nodes: nodes.map(decorateNode), edges };
+}
+
+function shownGraph() {
   const host = graphHost();
   const graph = host?.graph || { nodes: [], edges: [] };
   if (host === state.ide?.engineHost) {
@@ -954,7 +1131,7 @@ function visibleGraph() {
     const ids = new Set(nodes.map((node) => node.id));
     return { nodes, edges: graph.edges.filter((edge) => ids.has(edge.src) && ids.has(edge.dst) && edge.rel !== "has_window") };
   }
-  if (host !== state.ctx) return { nodes: graph.nodes, edges: graph.edges };
+  if (host !== state.ctx && host !== state.brain) return { nodes: graph.nodes, edges: graph.edges };
   // Once a model has named the work, keyphrase topics it didn't use are clutter.
   const tuned = graph.nodes.some((node) => node.props?.actions?.length);
   const isMain = (node) => !DETAIL_KINDS.has(node.kind) && !(tuned && node.kind === "topic" && !node.props?.actions?.length && node.props?.source !== "llm");
@@ -963,333 +1140,108 @@ function visibleGraph() {
   return { nodes, edges: graph.edges.filter((edge) => ids.has(edge.src) && ids.has(edge.dst) && edge.rel !== "has_window") };
 }
 
-function graphCanvas() {
-  if (!visibleGraph().nodes.length) return '<p class="muted pad">No nodes yet.</p>';
-  return '<canvas id="graph3d" class="graph3d" role="img" aria-label="Knowledge graph. Drag to rotate, select a node to open it."></canvas>';
+const EXPAND_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5"/></svg>';
+
+function legendHtml(nodes) {
+  const counts = new Map();
+  for (const node of nodes) counts.set(node.category, (counts.get(node.category) || 0) + 1);
+  const rows = legendCategories().filter((item) => counts.get(item.id) || item.id !== "other").map((item) => `<button class="legend-row ${state.legendFocus === item.id ? "is-on" : ""}" type="button" data-act="legend-focus" data-id="${esc(item.id)}"><i class="orb" style="--orb:${esc(item.color)}"></i><span>${esc(item.label)}</span><em>${counts.get(item.id) || 0}</em></button>`).join("");
+  return `<div class="graph-legend">${rows}<button class="legend-edit" type="button" data-act="legend-edit">Edit legend</button></div>`;
 }
 
-function seedSim(nodes, edges) {
-  const before = new Map(sim.points.map((point) => [point.node.id, point]));
-  const golden = Math.PI * (3 - Math.sqrt(5));
-  sim.points = nodes.map((node, i) => {
-    const known = before.get(node.id);
-    const y = 1 - ((i + 0.5) / nodes.length) * 2;
-    const ring = Math.sqrt(1 - y * y);
-    const angle = i * golden;
-    return {
-      node,
-      x: known?.x ?? Math.cos(angle) * ring * 190,
-      y: known?.y ?? y * 190,
-      z: known?.z ?? Math.sin(angle) * ring * 190,
-      vx: 0, vy: 0, vz: 0,
-    };
-  });
-  const index = new Map(nodes.map((node, i) => [node.id, i]));
-  sim.links = edges.map((edge) => [index.get(edge.src), index.get(edge.dst), edge.weight]);
-  sim.maxWeight = Math.max(1, ...nodes.map((node) => node.seconds || node.weight || 1));
-  // The layout settles before it's shown, so nothing jumps or bounces on screen.
-  sim.alpha = 1;
-  while (sim.alpha > 0.02) stepSim();
+/* The model names any new groups in the background, and they update on screen. */
+async function nameClusters() {
+  try {
+    state.clusters = await api("/graph/clusters/name", { method: "POST" });
+    mountGraph();
+  } catch {
+    // The automatic names stay.
+  }
 }
 
-function stepSim() {
-  const points = sim.points;
-  for (let a = 0; a < points.length; a += 1) {
-    const p = points[a];
-    for (let b = a + 1; b < points.length; b += 1) {
-      const q = points[b];
-      const dx = p.x - q.x;
-      const dy = p.y - q.y;
-      const dz = p.z - q.z;
-      const squared = Math.max(4, dx * dx + dy * dy + dz * dz);
-      const push = 5200 / (squared * Math.sqrt(squared));
-      p.vx += dx * push; p.vy += dy * push; p.vz += dz * push;
-      q.vx -= dx * push; q.vy -= dy * push; q.vz -= dz * push;
-    }
-  }
-  for (const [a, b, weight] of sim.links) {
-    const p = points[a];
-    const q = points[b];
-    const dx = q.x - p.x;
-    const dy = q.y - p.y;
-    const dz = q.z - p.z;
-    const dist = Math.max(1, Math.hypot(dx, dy, dz));
-    const pull = ((dist - 96) / dist) * 0.01 * Math.min(1.6, 0.4 + Math.log1p(weight) * 0.2);
-    p.vx += dx * pull; p.vy += dy * pull; p.vz += dz * pull;
-    q.vx -= dx * pull; q.vy -= dy * pull; q.vz -= dz * pull;
-  }
-  for (const p of points) {
-    p.vx = (p.vx - p.x * 0.007) * 0.72;
-    p.vy = (p.vy - p.y * 0.009) * 0.72;
-    p.vz = (p.vz - p.z * 0.007) * 0.72;
-    p.x += p.vx * sim.alpha;
-    p.y += p.vy * sim.alpha;
-    p.z += p.vz * sim.alpha;
-  }
-  sim.alpha *= 0.992;
+const GRAPH_CAPTION = `<p class="graph-caption">Double-click a node and drag it onto another group to move it. Click a group's name to rename it.</p>`;
+
+function graphStage(nodes) {
+  return `<div id="graph3d" class="graph3d" role="img" aria-label="Knowledge graph. Drag to rotate, select a node to open it."></div>
+    ${legendHtml(nodes)}`;
 }
 
-const sprites = new Map();
-
-// A shaded ball lit from the upper left, drawn once per shade and stamped at each particle's size.
-function sphereSprite(fill) {
-  if (sprites.has(fill)) return sprites.get(fill);
-  const level = parseInt(fill.slice(1, 3), 16);
-  const base = Math.max(level, 58);
-  const shade = (value) => {
-    const part = Math.round(clamp(value, 0, 255));
-    return `rgb(${part},${part},${part})`;
-  };
-  const size = 96;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const g = canvas.getContext("2d");
-  const light = g.createRadialGradient(size * 0.36, size * 0.32, size * 0.03, size / 2, size / 2, size * 0.5);
-  light.addColorStop(0, shade(base + (255 - base) * 0.8));
-  light.addColorStop(0.42, shade(base));
-  light.addColorStop(0.86, shade(base * 0.38));
-  light.addColorStop(1, shade(base * 0.2));
-  g.fillStyle = light;
-  g.beginPath();
-  g.arc(size / 2, size / 2, size / 2, 0, TAU);
-  g.fill();
-  sprites.set(fill, canvas);
-  return canvas;
+function graphCanvas(small = false, empty = "No nodes yet.") {
+  const { nodes } = visibleGraph();
+  if (!nodes.length) return `<p class="muted pad">${esc(empty)}</p>`;
+  if (state.graphExpanded) return '<div class="graph-frame is-away"></div>';
+  return `<div class="graph-frame ${small ? "small" : ""}">
+    ${graphStage(nodes)}
+    <button class="x-btn graph-expand" type="button" data-act="graph-expand" aria-label="Expand graph" title="Expand graph">${EXPAND_ICON}</button>
+  </div>`;
 }
 
-function drawFloor(g, project, pitch, scale) {
-  const seen = clamp((pitch - 0.02) / 0.18);
-  const middle = project(0, FLOOR_Y, 0);
-  if (!seen || !middle) return;
-  const radius = 520 * middle.near * scale;
-  g.save();
-  g.translate(middle.x, middle.y);
-  g.scale(1, Math.max(0.12, Math.sin(pitch)));
-  const pool = g.createRadialGradient(0, 0, 0, 0, 0, radius);
-  pool.addColorStop(0, `rgba(255,255,255,${0.09 * seen})`);
-  pool.addColorStop(1, "rgba(255,255,255,0)");
-  g.fillStyle = pool;
-  g.beginPath();
-  g.arc(0, 0, radius, 0, TAU);
-  g.fill();
-  g.restore();
-}
-
-function drawSim() {
-  const canvas = sim.canvas;
-  const rect = canvas.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  if (canvas.width !== Math.round(rect.width * dpr) || canvas.height !== Math.round(rect.height * dpr)) {
-    canvas.width = Math.round(rect.width * dpr);
-    canvas.height = Math.round(rect.height * dpr);
-  }
-  const g = canvas.getContext("2d");
-  g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  g.clearRect(0, 0, rect.width, rect.height);
-  const { pitch } = sim;
-  const cy = Math.cos(sim.yaw);
-  const sy = Math.sin(sim.yaw);
-  const cp = Math.cos(pitch);
-  const sp = Math.sin(pitch);
-  const scale = (sim.zoom * Math.min(rect.width, rect.height)) / 740;
-  const project = (x, y, z) => {
-    const across = x * cy - z * sy;
-    const depth = x * sy + z * cy;
-    const up = y * cp - depth * sp;
-    const away = y * sp + depth * cp;
-    if (CAMERA + away < 60) return null;
-    const near = CAMERA / (CAMERA + away);
-    return { x: rect.width / 2 + across * near * scale, y: rect.height * 0.5 + up * near * scale, z: away, near };
-  };
-
-  drawFloor(g, project, pitch, scale);
-
-  const shown = sim.points.map((point, index) => {
-    const spot = project(point.x, point.y, point.z) || { x: -999, y: -999, z: 0, near: 0.01 };
-    const size = 1.8 + Math.sqrt((point.node.seconds || point.node.weight || 1) / sim.maxWeight) * 9;
-    return {
-      index, node: point.node, z: spot.z, near: spot.near, world: point,
-      sx: spot.x, sy: spot.y,
-      r: Math.max(0.8, size * spot.near * Math.min(1.5, scale + 0.35)),
-      fade: 1 - clamp((spot.z + 260) / 560) * 0.8,
-    };
-  });
-  const host = graphHost();
-  const selected = host?.node?.node?.id;
-  const neighbors = new Set((host?.node?.neighbors || []).map((item) => item.id));
-  const lit = (node) => !selected || node.id === selected || neighbors.has(node.id);
-
-  // Shadows on the floor tell you how high each particle is.
-  const flat = Math.max(0.14, Math.sin(pitch));
-  if (pitch > 0.02) {
-    for (const item of shown) {
-      const spot = project(item.world.x, FLOOR_Y, item.world.z);
-      if (!spot) continue;
-      const lift = clamp((FLOOR_Y - item.world.y) / 480);
-      const radius = (item.r / item.near) * spot.near * (1.1 + lift * 0.9);
-      g.globalAlpha = (0.72 - lift * 0.42) * clamp((pitch - 0.02) / 0.18) * (lit(item.node) ? 1 : 0.4);
-      g.fillStyle = "#000";
-      g.beginPath();
-      g.ellipse(spot.x, spot.y, radius, radius * flat, 0, 0, TAU);
-      g.fill();
-      if (item.node.id === selected || item.node.id === sim.hover) {
-        g.globalAlpha = 0.5;
-        g.strokeStyle = "#fff";
-        g.lineWidth = 0.7;
-        g.setLineDash([2, 4]);
-        g.beginPath();
-        g.moveTo(item.sx, item.sy);
-        g.lineTo(spot.x, spot.y);
-        g.stroke();
-        g.setLineDash([]);
-      }
-    }
-    g.globalAlpha = 1;
-  }
-
-  // Lines and particles are painted back to front together, so near ones cover far ones.
-  const painted = [
-    ...shown.map((item) => ({ z: item.z, item })),
-    ...sim.links.map(([a, b]) => ({ z: (shown[a].z + shown[b].z) / 2 + 2, p: shown[a], q: shown[b] })),
-  ].sort((a, b) => b.z - a.z);
-  for (const entry of painted) {
-    if (entry.p) {
-      const { p, q } = entry;
-      const active = selected && (p.node.id === selected || q.node.id === selected);
-      const depth = (p.fade + q.fade) / 2;
-      g.globalAlpha = 1;
-      g.strokeStyle = `rgba(255,255,255,${active ? 0.85 : (selected ? 0.07 : 0.24) * depth})`;
-      g.lineWidth = (active ? 1.2 : 0.5) + ((p.near + q.near) / 2) * 0.55;
-      g.beginPath();
-      g.moveTo(p.sx, p.sy);
-      g.lineTo(q.sx, q.sy);
-      g.stroke();
-      continue;
-    }
-    const { item } = entry;
-    const style = KIND_STYLE[item.node.kind] || { fill: "#808080" };
-    const on = item.node.id === selected || item.node.id === sim.hover;
-    g.globalAlpha = lit(item.node) ? item.fade : item.fade * 0.32;
-    const size = item.r * 2;
-    g.drawImage(sphereSprite(style.fill), item.sx - item.r, item.sy - item.r, size, size);
-    if (style.stroke || style.ring || on) {
-      g.beginPath();
-      g.arc(item.sx, item.sy, item.r + (style.ring ? 2.2 * item.near : 0), 0, TAU);
-      g.lineWidth = on ? 2 : 0.8;
-      g.strokeStyle = on ? "#fff" : "rgba(255,255,255,0.55)";
-      g.stroke();
-    }
-  }
-  const ranked = [...shown].sort((a, b) => (b.node.seconds || b.node.weight) - (a.node.seconds || a.node.weight)).slice(0, 14);
-  const named = new Set(ranked.map((item) => item.node.id));
-  const family = getComputedStyle(document.body).fontFamily;
-  g.textBaseline = "middle";
-  g.lineJoin = "round";
-  for (const item of [...shown].sort((a, b) => b.z - a.z)) {
-    const id = item.node.id;
-    const on = id === selected || id === sim.hover;
-    if (!on && !neighbors.has(id) && !(named.has(id) && !selected)) continue;
-    const label = snippet(item.node.label, 30);
-    // Type shrinks and dims with distance, like the particles it names.
-    g.font = `${(9.5 + item.near * 2.4).toFixed(1)}px ${family}`;
-    g.globalAlpha = on ? 1 : clamp(item.fade + 0.1);
-    g.lineWidth = 3;
-    g.strokeStyle = "#000";
-    g.strokeText(label, item.sx + item.r + 5, item.sy);
-    g.fillStyle = on ? "#fff" : "#c4c4c4";
-    g.fillText(label, item.sx + item.r + 5, item.sy);
-  }
-  g.globalAlpha = 1;
-  sim.screen = shown;
-}
-
-function loopSim(now) {
-  if (!sim.canvas?.isConnected) {
-    sim.raf = 0;
+/* The expanded graph is its own layer over the whole window, with the chat on its right. */
+function paintGraphOverlay() {
+  let layer = $("#graph-overlay");
+  const nodes = state.graphExpanded && graphHost() ? visibleGraph().nodes : [];
+  const open = state.graphExpanded && nodes.length > 0;
+  document.body.classList.toggle("graph-open", open);
+  if (!open) {
+    layer?.remove();
     return;
   }
-  if (!sim.drag) {
-    sim.yaw += sim.spin;
-    sim.spin *= 0.85;
-    if (now - sim.touched > 3000 && !sim.hover && !reducedMotion) sim.yaw += 0.0012;
+  const typed = $("#chat-input")?.value || "";
+  if (!layer) {
+    layer = document.createElement("div");
+    layer.id = "graph-overlay";
+    document.body.appendChild(layer);
   }
-  drawSim();
-  sim.raf = requestAnimationFrame(loopSim);
-}
-
-function pickSim(event) {
-  const rect = sim.canvas.getBoundingClientRect();
-  const x = event.clientX - rect.left;
-  const y = event.clientY - rect.top;
-  let best = null;
-  let bestDistance = Infinity;
-  for (const item of sim.screen) {
-    const distance = Math.hypot(item.sx - x, item.sy - y);
-    if (distance < item.r + 6 && (distance < bestDistance || item.z < best.z)) {
-      best = item;
-      bestDistance = distance;
-    }
-  }
-  return best?.node || null;
+  layer.innerHTML = `<div class="overlay-graph">
+      ${graphStage(nodes)}
+      ${graphHost()?.node ? `<aside class="graph-node-overlay">${nodePanel()}</aside>` : ""}
+    </div>
+    ${chatSidebar()}`;
+  const input = $("#chat-input");
+  if (input) input.value = typed;
+  const thread = $("#chat-thread");
+  if (thread) thread.scrollTop = thread.scrollHeight;
 }
 
 function mountGraph() {
-  const canvas = $("#graph3d");
-  if (!canvas) {
-    sim.canvas = null;
-    return;
-  }
+  const box = $("#graph3d");
+  if (!box) return;
+  const host = graphHost();
   const { nodes, edges } = visibleGraph();
-  const key = `${state.view}:${state.ctx?.id}:${state.doc?.id}:${state.flow?.id}:${state.ide?.id}:${state.ide?.active}:${nodes.map((node) => node.id).join("|")}:${edges.length}`;
-  if (key !== sim.key) {
-    seedSim(nodes, edges);
-    sim.key = key;
-  }
-  sim.canvas = canvas;
-  canvas.addEventListener("pointerdown", (event) => {
-    canvas.setPointerCapture(event.pointerId);
-    sim.drag = { x: event.clientX, y: event.clientY, moved: false };
-    sim.spin = 0;
+  const groupNames = Object.fromEntries((state.clusters?.clusters || []).map((item) => [item.id, item.label]));
+  const groups = state.clusters?.members || {};
+  const shown = window.Atom?.show(box, { nodes, edges, groups, groupNames }, {
+    onRename: async (id, name) => {
+      state.clusters = await api("/graph/clusters/name", { method: "PUT", body: JSON.stringify({ id, name }) });
+      mountGraph();
+      toast(`Renamed to ${name}`);
+    },
+    onMove: async (id, cluster) => {
+      state.clusters = await api("/graph/node-cluster", { method: "PUT", body: JSON.stringify({ id, cluster }) });
+      mountGraph();
+      const node = nodes.find((item) => item.id === id);
+      toast(`Moved ${node?.label || "node"} to ${state.clusters.clusters.find((item) => item.id === cluster)?.label || "that group"}`);
+    },
+    key: `${state.view}:${state.ctx?.id}:${state.doc?.id}:${state.flow?.id}:${state.ide?.id}:${state.ide?.active}`,
+    selected: host?.node?.node?.id,
+    focus: chatKey() === "brain" ? state.chatFocus : null,
+    category: state.legendFocus,
+    expanded: state.graphExpanded,
+    onSelect: async (id) => {
+      const current = graphHost();
+      if (!current) return;
+      try {
+        if (id) await actions.node({ dataset: { id } });
+        else if (current.node) {
+          current.node = null;
+          paintView();
+        }
+      } catch (error) {
+        toast(error.message || "Request failed");
+      }
+    },
   });
-  canvas.addEventListener("pointermove", (event) => {
-    if (sim.drag) {
-      const dx = event.clientX - sim.drag.x;
-      const dy = event.clientY - sim.drag.y;
-      if (Math.abs(dx) + Math.abs(dy) > 2) sim.drag.moved = true;
-      sim.spin = dx * 0.006;
-      sim.yaw += sim.spin;
-      sim.pitch = clamp(sim.pitch + dy * 0.004, -0.25, 1.25);
-      sim.drag.x = event.clientX;
-      sim.drag.y = event.clientY;
-      sim.touched = performance.now();
-      return;
-    }
-    const node = pickSim(event);
-    sim.hover = node?.id || null;
-    canvas.style.cursor = node ? "pointer" : "grab";
-  });
-  canvas.addEventListener("pointerleave", () => {
-    sim.hover = null;
-  });
-  canvas.addEventListener("pointerup", async (event) => {
-    const clicked = sim.drag && !sim.drag.moved ? pickSim(event) : null;
-    sim.drag = null;
-    sim.touched = performance.now();
-    if (!clicked) return;
-    try {
-      await actions.node({ dataset: { id: clicked.id } });
-    } catch (error) {
-      toast(error.message || "Request failed");
-    }
-  });
-  // Pinch arrives as a ctrl wheel; a plain wheel keeps scrolling the page.
-  canvas.addEventListener("wheel", (event) => {
-    if (!event.ctrlKey) return;
-    event.preventDefault();
-    sim.zoom = Math.max(0.4, Math.min(4, sim.zoom * Math.exp(-event.deltaY * 0.01)));
-  }, { passive: false });
-  if (!sim.raf) sim.raf = requestAnimationFrame(loopSim);
+  if (!shown) box.innerHTML = '<p class="muted pad">Showing the graph needs WebGL, which is off in this browser.</p>';
 }
 
 function nodePanel() {
@@ -1314,14 +1266,21 @@ function nodePanel() {
   const fold = (title, count, body) => (count ? `<details class="fold"><summary>${esc(title)} · ${count}</summary>${body}</details>` : "");
   return section(
     node.label,
-    `<p class="label">${kindSwatch(node.kind)}${esc(node.kind)}</p>
+    `<p class="label"><i class="orb" style="--orb:${esc(categoryFor(node)?.color || "#ff8a1f")}"></i>${esc(categoryFor(node)?.label || node.kind)} · ${esc(node.kind.replace("_", " "))}</p>
     ${traits ? `<div class="tags">${traits}</div>` : ""}
     ${actionRows ? `<ul class="notes">${actionRows}</ul>` : ""}
     ${fold("System events", (data.events || []).length, eventRows)}
     ${fold("Frames", (data.frames || []).length, `<div class="list">${frameRows}</div>`)}
     ${fold("Connections", (data.neighbors || []).length, `<div class="list">${rows}</div>`)}
+    <form class="node-edit" data-form="node-edit" data-id="${esc(node.id)}">
+      <input name="label" value="${esc(state.legend?.overrides?.[node.id]?.label || node.label)}" aria-label="Name" autocomplete="off" />
+      <select name="category" aria-label="Category">${legendCategories().map((item) => `<option value="${esc(item.id)}" ${categoryFor(node)?.id === item.id ? "selected" : ""}>${esc(item.label)}</option>`).join("")}</select>
+      <select name="cluster" aria-label="Group">${(state.clusters?.clusters || []).map((item) => `<option value="${esc(item.id)}" ${state.clusters.members[node.id] === item.id ? "selected" : ""}>${esc(item.label)}</option>`).join("")}</select>
+      <button class="btn sm" type="submit">Save</button>
+      ${state.legend?.overrides?.[node.id] ? `<button class="btn sm" type="button" data-act="node-reset" data-id="${esc(node.id)}">Reset</button>` : ""}
+    </form>
     <details class="fold"><summary>Details</summary><dl class="props"><dt>ID</dt><dd><code>${esc(node.id)}</code></dd><dt>Seen</dt><dd>${Math.round(node.weight)}×</dd><dt>First</dt><dd>${esc(stamp(node.first_seen))}</dd><dt>Last</dt><dd>${esc(stamp(node.last_seen))}</dd></dl></details>
-    ${graphHost() === state.ctx ? `<div class="actions"><button class="btn sm" type="button" data-act="node-context" data-label="${esc(node.label)}">Write a context file about this</button></div>` : ""}`,
+    ${graphHost() === state.ctx || graphHost() === state.brain ? `<div class="actions"><button class="btn sm" type="button" data-act="node-context" data-label="${esc(node.label)}">Write a context file about this</button></div>` : ""}`,
   );
 }
 
@@ -1348,6 +1307,7 @@ function ctxGraphHtml() {
     </form>
     <div class="tags">${kinds}<button class="tag click" type="button" data-act="graph-kind" data-kind="${ctx.graphKind ? "" : "*"}">${ctx.graphKind ? "Main nodes" : "Show everything"}</button></div>
     ${results}
+    ${state.graphExpanded ? "" : GRAPH_CAPTION}
     <div class="graph-grid">
       <section class="panel-box graph-box">${graphCanvas()}</section>
       <div class="stack">${nodePanel()}${transitions ? section("Habitual transitions", transitions) : ""}</div>
@@ -1359,6 +1319,7 @@ function ctxGraphHtml() {
 /* Chat beneath a recording's graph */
 
 function chatKey() {
+  if (!state.ctx && (state.view === "knowledge" || state.graphExpanded)) return "brain";
   return state.ctx?.kind === "session" ? String(state.ctx.id) : "all";
 }
 
@@ -1371,30 +1332,97 @@ function chatTurns() {
 function threadHtml() {
   const turns = chatTurns();
   if (!turns.length) {
-    return `<div class="tags">${PROMPTS.map((prompt) => `<button class="tag click" type="button" data-act="chat-prompt" data-q="${esc(prompt)}">${esc(prompt)}</button>`).join("")}</div>`;
+    return `<div class="tags">${(chatKey() === "brain" ? BRAIN_PROMPTS : PROMPTS).map((prompt) => `<button class="tag click" type="button" data-act="chat-prompt" data-q="${esc(prompt)}">${esc(prompt)}</button>`).join("")}</div>`;
   }
   return turns.map((turn) => {
     if (turn.role === "user") return `<div class="chat-q">${esc(turn.text)}</div>`;
     const cites = (turn.citations || []).map((cite) => `<button class="tag click" type="button" data-act="citation" data-type="${esc(cite.type || "")}" data-id="${esc(cite.id ?? "")}" data-frame="${esc(cite.frame_id ?? "")}">${esc(cite.label || "Source")}</button>`).join("");
     const body = turn.pending ? '<div class="typing"><i></i><i></i><i></i></div>' : mdHtml(turn.text);
-    return `<div class="chat-a prose">${body}${cites ? `<div class="tags">${cites}</div>` : ""}</div>`;
+    const nodes = (turn.nodes || []).map((node) => `<button class="tag click" type="button" data-act="node" data-id="${esc(node.id)}">${kindSwatch(node.kind)}${esc(node.label)}</button>`).join("");
+    const cards = (turn.proposals || []).map((item, index) => proposalCard(turns.indexOf(turn), index, item)).join("");
+    return `<div class="chat-a prose">${body}${nodes ? `<div class="tags">${nodes}</div>` : ""}${cites ? `<div class="tags">${cites}</div>` : ""}${cards}</div>`;
   }).join("");
 }
 
+const PROPOSALS = {
+  harness: { label: "Harness", start: "Build harness" },
+  context: { label: "Context file", start: "Write context" },
+  workflow: { label: "Workflow", start: "Write workflow" },
+};
+
+function proposalSources(item) {
+  const count = (number, name) => (number ? `${number} ${name}${number === 1 ? "" : "s"}` : "");
+  return [count(item.session_ids.length, "recording"), count(item.context_ids.length, "context"), count(item.workflow_ids.length, "workflow"), count(item.new_workflows.length, "new workflow")].filter(Boolean).join(" · ");
+}
+
+function proposalCard(turn, index, item) {
+  const kind = PROPOSALS[item.kind];
+  const ids = `data-turn="${turn}" data-index="${index}"`;
+  const footer = item.status === "running"
+    ? '<span class="faint">Working. This can take a minute.</span>'
+    : item.status === "done"
+      ? `<button class="btn sm" type="button" data-act="${item.open.act}" data-id="${item.open.id}">Open</button>${item.note ? `<span class="faint">${esc(item.note)}</span>` : ""}`
+      : item.status === "dismissed"
+        ? '<span class="faint">Dismissed</span>'
+        : `<button class="btn sm primary" type="button" data-act="proposal-start" ${ids}>${item.status === "failed" ? "Try again" : kind.start}</button><button class="btn sm" type="button" data-act="proposal-dismiss" ${ids}>Dismiss</button>${item.error ? `<span class="proposal-error">${esc(item.error)}</span>` : ""}`;
+  return `<article class="proposal"><p class="label">${kind.label}</p><strong>${esc(item.name)}</strong>${item.description ? `<p class="muted">${esc(item.description)}</p>` : ""}<p class="faint">${esc(proposalSources(item))}</p><div class="proposal-foot">${footer}</div></article>`;
+}
+
+async function startProposal(item) {
+  const post = (path, body) => api(path, { method: "POST", body: JSON.stringify(body) });
+  const sources = { session_ids: item.session_ids, context_ids: item.context_ids };
+  if (item.kind === "harness") {
+    const made = await post("/harnesses", { name: item.name, purpose: item.description, ...sources, workflow_ids: item.workflow_ids, new_workflows: item.new_workflows });
+    return { open: { act: "harness-open", id: made.id }, note: made.not_written.length ? `Your recordings don't show: ${made.not_written.join(", ")}` : "" };
+  }
+  if (item.kind === "context") {
+    const made = await post("/contexts/compose", { name: item.name, description: item.description, ...sources, workflow_ids: item.workflow_ids });
+    return { open: { act: "open-doc", id: made.id } };
+  }
+  const made = await post("/workflows/generate", { name: item.name, purpose: item.description, ...sources });
+  if (!made.ids.length) throw new Error("Your recordings don't show this work.");
+  return { open: { act: "open-flow", id: made.ids[0] } };
+}
+
+async function sendBrain(question) {
+  const turns = chatTurns();
+  const history = turns.map((turn) => ({ role: turn.role, text: turn.text }));
+  turns.push({ role: "user", text: question });
+  const reply = { role: "assistant", text: "", pending: true, citations: [] };
+  turns.push(reply);
+  syncThread();
+  const input = $("#chat-input");
+  if (input) input.value = "";
+  await saveChat("brain");
+  try {
+    const found = await api("/brain/ask", { method: "POST", body: JSON.stringify({ question, history }) });
+    Object.assign(reply, { text: found.answer, citations: found.citations, nodes: found.nodes, proposals: found.proposals });
+    state.chatFocus = new Set(found.nodes.map((node) => node.id));
+    mountGraph();
+  } catch (error) {
+    reply.text = error.message || "Ask failed";
+  }
+  reply.pending = false;
+  syncThread();
+  await saveChat("brain");
+}
+
 function chatHtml() {
+  if (state.graphExpanded) return "";
   const scope = state.ctx?.kind === "session" ? "this recording" : "all your history";
-  const clear = chatTurns().length ? '<button class="btn sm" type="button" data-act="chat-clear">Clear</button>' : "";
   return section(
     `Ask about ${scope}`,
-    `<div id="chat-thread" class="chat-thread">${threadHtml()}</div>
+    `<div id="chat-history-slot">${chatHistoryHtml()}</div>
+    <div id="chat-thread" class="chat-thread">${threadHtml()}</div>
     <form class="inline" data-form="chat"><input id="chat-input" name="question" placeholder="Ask what happened, what's unfinished, or where something was" autocomplete="off" /><button class="btn primary" type="submit">Ask</button></form>`,
-    clear,
+    `<div class="chat-head-tools">${chatToolsHtml()}</div>`,
   );
 }
 
 function syncThread() {
   const thread = $("#chat-thread");
   if (!thread) return;
+  paintChatTools();
   thread.innerHTML = threadHtml();
   thread.scrollTop = thread.scrollHeight;
 }
@@ -1402,6 +1430,8 @@ function syncThread() {
 async function sendChat(question) {
   const cleaned = question.trim();
   if (!cleaned) return;
+  if (chatKey() === "brain") return sendBrain(cleaned);
+  const key = chatKey();
   const turns = chatTurns();
   const history = turns.map((turn) => ({ role: turn.role, text: turn.text }));
   turns.push({ role: "user", text: cleaned });
@@ -1410,6 +1440,7 @@ async function sendChat(question) {
   syncThread();
   const input = $("#chat-input");
   if (input) input.value = "";
+  await saveChat(key);
   const headers = { "Content-Type": "application/json" };
   if (token()) headers.Authorization = `Bearer ${token()}`;
   try {
@@ -1445,6 +1476,7 @@ async function sendChat(question) {
   }
   reply.pending = false;
   syncThread();
+  await saveChat(key);
 }
 
 function ctxTimelineHtml() {
@@ -1537,14 +1569,18 @@ function ctxSearchHtml() {
 /* Workflows */
 
 function slots(text) {
-  return inlineMd(text).replace(/\{([\w -]+)\}/g, '<span class="slot">{$1}</span>');
+  // Mark {placeholders} in text only: one inside a link's address must stay part of the URL.
+  return inlineMd(text)
+    .split(/(<[^>]*>)/)
+    .map((part) => (part.startsWith("<") ? part : part.replace(/\{([\w -]+)\}/g, '<span class="slot">{$1}</span>')))
+    .join("");
 }
 
 function workflowsHtml() {
   if (state.flow) return flowHtml();
   const items = state.workflows?.data || [];
   return `<div class="stack">
-    ${pageHead("Workflows", "", '<button class="btn primary" type="button" data-act="workflow-new">Generate with model</button>')}
+    ${pageHead("Workflows", "", '<button class="btn primary" type="button" data-act="workflow-new">New</button>')}
     ${items.length ? `<div class="flow-grid">${items.map(flowCard).join("")}</div>` : `<section class="panel-box hero"><h2>No workflows yet</h2></section>`}
   </div>`;
 }
@@ -1600,13 +1636,16 @@ function workflowDialog(session, context) {
   const sessionRows = sessions.filter((item) => item.frames > 0).map((item) => `<label class="pick"><input type="checkbox" name="session" value="${item.id}" ${noPick || String(item.id) === session ? "checked" : ""} /><span><strong>${esc(item.label || `Recording ${item.id}`)}</strong><span class="faint">${esc(stamp(item.started_at))}</span></span></label>`).join("");
   const contextRows = saved.map((item) => `<label class="pick"><input type="checkbox" name="context" value="${item.id}" ${String(item.id) === context ? "checked" : ""} /><span><strong>${esc(item.title)}</strong><span class="faint">${esc(recordingLabel(item.session_id))}</span></span></label>`).join("");
   const noModel = state.llm && !state.llm.enabled;
-  return `<div class="backdrop center" data-act="close"><form class="modal" data-sheet data-form="workflow-new">
-    <header><h2>New workflow</h2><button class="btn sm" type="button" data-act="close">Close</button></header>
+  return `<div class="backdrop center" data-act="close"><form class="modal wide" data-sheet data-form="workflow-new">
+    <header><h2>New workflow</h2>${closeX()}</header>
     ${noModel ? '<p class="banner">Workflows are written by a model, so add one in Settings first.</p>' : ""}
+    ${suggestBox("workflow")}
     <label class="field">Name<input name="name" placeholder="Optional" autocomplete="off" /></label>
-    <label class="field">What it's for<textarea name="purpose" rows="3" placeholder="Optional"></textarea></label>
-    <fieldset class="picks"><legend><span class="label">Recordings to scan</span><button class="link" type="button" data-act="pick-all" data-name="session">All</button><button class="link" type="button" data-act="pick-none" data-name="session">None</button></legend><div class="pick-list">${sessionRows || '<p class="faint">No recordings yet.</p>'}</div></fieldset>
-    <fieldset class="picks"><legend><span class="label">Context files to scan</span><button class="link" type="button" data-act="pick-all" data-name="context">All</button><button class="link" type="button" data-act="pick-none" data-name="context">None</button></legend><div class="pick-list">${contextRows || '<p class="faint">No context files yet.</p>'}</div></fieldset>
+    <label class="field">What it's for<textarea name="purpose" rows="4" placeholder="Optional"></textarea></label>
+    <div class="modal-picks">
+    <fieldset class="picks"><legend><span class="label">Recordings to scan</span></legend><div class="pick-list">${sessionRows || '<p class="faint">No recordings yet.</p>'}</div>${pickActions("session")}</fieldset>
+    <fieldset class="picks"><legend><span class="label">Context files to scan</span></legend><div class="pick-list">${contextRows || '<p class="faint">No context files yet.</p>'}</div>${pickActions("context")}</fieldset>
+    </div>
     <p class="wiz-note" id="workflow-note"></p>
     <div class="actions"><button class="btn primary" type="submit" ${noModel ? "disabled" : ""}>Generate</button></div>
   </form></div>`;
@@ -1627,7 +1666,7 @@ function harnessesHtml() {
     </article>`;
   }).join("");
   return `<div class="stack">
-    ${pageHead("Harnesses", "", '<button class="btn primary" type="button" data-act="harness-new">New harness</button>')}
+    ${pageHead("Harnesses")}
     <div class="harness-grid">
       <button class="harness-card new" type="button" data-act="harness-new"><span class="plus">+</span><strong>New harness</strong></button>
       ${cards}
@@ -1640,14 +1679,77 @@ function harnessesHtml() {
 const WIZARD_STEPS = ["Purpose", "Recordings", "Contexts", "Workflows", "Review"];
 
 function newWizard(session = null) {
-  return { step: 0, name: "", purpose: "", session_ids: session ? [session] : [], context_ids: [], workflow_ids: [], new_workflows: [], suggested: null, suggestKey: "", note: "", busy: false };
+  return { step: 0, name: "", purpose: "", session_ids: session ? [session] : [], context_ids: [], workflow_ids: [], new_workflows: [], client_ids: null, suggested: null, suggestKey: "", note: "", busy: false };
 }
 
 async function loadWizard() {
-  const [sessions, saved, flows] = await Promise.all([api("/sessions?limit=200"), api("/contexts?limit=500"), api("/workflows")]);
+  const [sessions, saved, flows, clients] = await Promise.all([api("/sessions?limit=200"), api("/contexts?limit=500"), api("/workflows"), api("/clients").catch(() => ({ data: [] }))]);
   state.sessions = sessions;
   state.saved = saved.data;
   state.workflows = flows;
+  state.clients = clients;
+  // Tools found on this computer start ticked. Later reloads keep whatever the person changed.
+  loadIdeas();
+  state.wizard.client_ids ??= clients.data.filter((item) => item.installable && item.detected && !item.connected).map((item) => item.id);
+}
+
+const clientName = (item) => item.label.replace(/\s*\(.*\)$/, "");
+
+function clientLogo(item) {
+  if (!item.logo) return `<span class="client-logo letter" aria-hidden="true">${esc(item.label[0])}</span>`;
+  const url = `url(/static/logos/${encodeURIComponent(item.logo)})`;
+  return `<span class="client-logo" style="-webkit-mask-image:${url};mask-image:${url}" aria-hidden="true"></span>`;
+}
+
+function wizardClientsHtml() {
+  const wiz = state.wizard;
+  const clients = state.clients?.data || [];
+  if (!clients.length) return "";
+  const tile = (item) => {
+    const on = item.connected || wiz.client_ids.includes(item.id);
+    const flag = item.connected ? "Connected" : item.detected ? "Found" : "Not found";
+    return `<label class="client-pick ${on ? "is-on" : ""}"><input type="checkbox" data-wiz-client value="${esc(item.id)}" ${on ? "checked" : ""} ${item.connected ? "disabled" : ""} />${clientLogo(item)}<span><strong>${esc(clientName(item))}</strong><span class="faint">${flag}</span></span></label>`;
+  };
+  const byHand = clients.filter((item) => !item.installable);
+  return `<div class="wiz-clients">
+      <h3>Which AI tools can use it?</h3>
+      <p class="faint">Tools found on this computer are ticked. Building adds Chronicle's MCP server to each one, which gives that tool all of your harnesses, not only this one. To remove a tool later, use Integrations.</p>
+      <div class="client-picks">${clients.filter((item) => item.installable).map(tile).join("")}</div>
+      ${byHand.length ? `<p class="label">Set up by hand in Integrations</p><div class="client-picks">${byHand.map((item) => `<div class="client-pick is-hand">${clientLogo(item)}<span><strong>${esc(clientName(item))}</strong></span></div>`).join("")}</div>` : ""}
+    </div>`;
+}
+
+function ideasHtml() {
+  if (!state.ideas) return '<span class="faint">Reading your knowledge graph for ideas…</span>';
+  return state.ideas.options.map((item) => `<button class="tag click" type="button" data-act="wiz-example" data-name="${esc(item.name)}" data-purpose="${esc(item.purpose)}" title="${esc(item.purpose)}">${esc(item.name)}</button>`).join("");
+}
+
+async function loadIdeas() {
+  if (state.ideas) return;
+  try {
+    state.ideas = await api("/brain/harness-ideas");
+  } catch {
+    state.ideas = { options: [] };
+  }
+  const box = $("#wiz-ideas");
+  if (box) box.innerHTML = ideasHtml();
+}
+
+function wizardClients() {
+  const wiz = state.wizard;
+  return (state.clients?.data || []).filter((item) => wiz.client_ids?.includes(item.id) && item.installable && !item.connected);
+}
+
+async function connectClients(items) {
+  const results = await Promise.allSettled(items.map((item) => api(`/clients/${encodeURIComponent(item.id)}/install`, { method: "POST", body: "{}" })));
+  state.clients = await api("/clients").catch(() => state.clients);
+  const names = (wanted) => items.filter((_, index) => results[index].status === wanted).map(clientName);
+  const failed = names("rejected");
+  const done = names("fulfilled");
+  return [
+    done.length ? `Connected ${done.join(", ")}. Restart ${done.length === 1 ? "it" : "them"} to finish.` : "",
+    failed.length ? `Couldn't connect ${failed.join(", ")}. Try again in Integrations.` : "",
+  ].filter(Boolean);
 }
 
 function pickRow(field, item, title, meta) {
@@ -1663,9 +1765,10 @@ function wizardStepHtml() {
   if (wiz.step === 0) {
     return `<h2>What is this harness for?</h2>
       
-      <label class="field">Name<input data-wiz="name" value="${esc(wiz.name)}" placeholder="Recruiting" autocomplete="off" /></label>
-      <div class="tags">${HARNESS_EXAMPLES.map((name) => `<button class="tag click" type="button" data-act="wiz-example" data-name="${esc(name)}">${esc(name)}</button>`).join("")}</div>
-      <label class="field">Describe it in detail<textarea data-wiz="purpose" rows="7" placeholder="What should an agent be able to do, what does good look like, and what should it never do on its own?">${esc(wiz.purpose)}</textarea></label>`;
+      <label class="field">Name<input data-wiz="name" value="${esc(wiz.name)}" placeholder="The line of work this is for" autocomplete="off" /></label>
+      <div class="tags" id="wiz-ideas">${ideasHtml()}</div>
+      <label class="field">Describe it in detail<textarea data-wiz="purpose" rows="7" placeholder="What should an agent be able to do, what does good look like, and what should it never do on its own?">${esc(wiz.purpose)}</textarea></label>
+      ${wizardClientsHtml()}`;
   }
   if (wiz.step === 1) {
     return `<h2>Which recordings should its graph know?</h2>
@@ -1705,7 +1808,7 @@ function wizardStepHtml() {
       ${adding.map((item) => line(`workflows/${item.name}`, "t-flow", "to write")).join("")}
       ${line(`graph/ from ${wiz.session_ids.length} recording${wiz.session_ids.length === 1 ? "" : "s"}`, "t-graph")}
     </div>
-    `;
+    ${wizardClients().length ? `<p class="muted">Building also connects ${esc(wizardClients().map(clientName).join(", "))}.</p>` : ""}`;
 }
 
 function wizardHtml() {
@@ -1848,7 +1951,7 @@ function ideEditor(file) {
     return `${toolbar}<div class="ide-source"><pre id="ide-gutter" class="gutter" aria-hidden="true">${lines}</pre><textarea id="ide-text" spellcheck="false" aria-label="Edit ${esc(file.path)}">${esc(text)}</textarea></div>`;
   }
   const host = ideGraphHost();
-  const graph = host ? `<section class="ide-mini"><div class="inline spread"><span class="nav-label">Graph</span></div><canvas id="graph3d" class="graph3d small" role="img" aria-label="This file's knowledge graph."></canvas>${host.node ? nodePanel() : ""}</section>` : "";
+  const graph = host ? `<section class="ide-mini"><div class="inline spread"><span class="nav-label">Graph</span></div>${graphCanvas(true)}${host.node ? nodePanel() : ""}</section>` : "";
   return `${toolbar}<div class="ide-preview"><article class="prose">${mdHtml(stripFront(text))}</article>${graph}</div>`;
 }
 
@@ -1868,7 +1971,7 @@ function ideEngine() {
     <div class="ide-preview engine">
       <form class="inline" data-form="engine-search"><input name="q" value="${esc(found?.q || "")}" placeholder="Search entities and system events" autocomplete="off" /><button class="btn" type="submit">Search</button></form>
       ${results}
-      ${host.graph.nodes.length ? '<canvas id="graph3d" class="graph3d" role="img" aria-label="The harness knowledge graph. Drag to rotate, select a node to open it."></canvas>' : '<p class="muted pad">Pick a recording below to give this harness a graph.</p>'}
+      ${host.graph.nodes.length ? graphCanvas() : '<p class="muted pad">Pick a recording below to give this harness a graph.</p>'}
       ${host.node ? nodePanel() : ""}
       ${section("Built from", `<div class="pick-list">${recordings || '<p class="faint">No recordings yet.</p>'}</div>`)}
     </div>`;
@@ -1982,7 +2085,7 @@ async function openPalette() {
   const [harnesses, sessions, saved, flows] = await Promise.all([api("/harnesses"), api("/sessions?limit=100"), api("/contexts?limit=300"), api("/workflows")]);
   const items = [
     { label: "New harness", kind: "command", run: () => actions["harness-new"]({ dataset: {} }) },
-    { label: "New recording", kind: "command", run: () => go("recordings") },
+    { label: "New recording", kind: "command", run: () => go("knowledge") },
     ...VIEWS.map((view) => ({ label: TITLES[view], kind: "page", run: () => go(view) })),
     ...harnesses.data.map((item) => ({ label: item.name, kind: "harness", run: () => go("harnesses", { ide: newIde(item.id) }) })),
     ...sessions.data.map((item) => ({ label: item.label || `Recording ${item.id}`, kind: "recording", run: () => openRecording(item.id) })),
@@ -2021,22 +2124,245 @@ function closePalette() {
   paintPalette();
 }
 
+/* The legend editor */
+
+function paintLegendEditor() {
+  const draft = state.legendDraft;
+  const palette = state.legend.palette;
+  const open = draft.categories.find((item) => item.id === draft.wheel);
+  if (open && (!draft.hsv || hsvToHex(draft.hsv) !== open.color)) draft.hsv = hexToHsv(open.color);
+  const rows = draft.categories.map((item) => `<div class="legend-line" data-line="${esc(item.id)}">
+      <i class="orb big" style="--orb:${esc(item.color)}"></i>
+      <input data-legend-name="${esc(item.id)}" value="${esc(item.label)}" placeholder="Category name" aria-label="Category name" autocomplete="off" />
+      <div class="legend-colors">${palette.map((color) => `<button class="color-dot ${item.color.toLowerCase() === color ? "is-on" : ""}" type="button" style="--orb:${color}" data-act="legend-color" data-id="${esc(item.id)}" data-color="${color}" aria-label="Use ${color}"></button>`).join("")}<button class="color-dot wheel-dot ${draft.wheel === item.id ? "is-on" : ""}" type="button" data-act="legend-wheel" data-id="${esc(item.id)}" aria-label="Choose any color" title="Choose any color" aria-expanded="${draft.wheel === item.id}"></button></div>
+      ${item.id === "other" ? '<span class="legend-keep"></span>' : closeX(`data-act="legend-remove" data-id="${esc(item.id)}"`).replace('class="x-btn"', 'class="x-btn x-ring"').replace('aria-label="Close" title="Close"', `aria-label="Remove ${esc(item.label || "category")}" title="Remove"`)}
+    </div>${draft.wheel === item.id ? wheelHtml(item) : ""}`).join("");
+  const kinds = [...new Set([...Object.keys(state.legend.kinds || {}), ...Object.keys(draft.kindMap)])].sort();
+  const options = (kind) => draft.categories.map((item) => `<option value="${esc(item.id)}" ${(draft.kindMap[kind] || "other") === item.id ? "selected" : ""}>${esc(item.label || "New category")}</option>`).join("");
+  const kindRows = kinds.map((kind) => `<label class="kind-line"><span>${kindSwatchFor(kind)}${esc(kind.replaceAll("_", " "))}<em>${state.legend.kinds?.[kind] || 0}</em></span><select data-change="legend-kind" data-kind="${esc(kind)}">${options(kind)}</select></label>`).join("");
+  $("#drawer").innerHTML = `<div class="backdrop center" data-act="close"><div class="modal wide legend-editor" data-sheet>
+    <header><h2>Edit legend</h2>${closeX()}</header>
+    <p class="muted">Changes apply to every knowledge graph, and to what agents read over MCP. To move one node, select it on a graph.</p>
+    <div class="legend-columns">
+      <section class="stack tight"><p class="label">Categories</p>${rows}<div><button class="btn sm" type="button" data-act="legend-add">Add category</button></div></section>
+      <section class="stack tight"><p class="label">What goes where</p><div class="kind-list">${kindRows}</div></section>
+    </div>
+    <p class="wiz-note" id="legend-note"></p>
+    <div class="actions"><button class="btn primary" type="button" data-act="legend-save">Save</button></div>
+  </div></div>`;
+  bindColorWheel();
+}
+
+/* A hue and saturation wheel, with brightness beneath it, for any color the palette doesn't have */
+
+function hexToHsv(hex) {
+  const [r, g, b] = [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16) / 255);
+  const high = Math.max(r, g, b);
+  const gap = high - Math.min(r, g, b);
+  let hue = 0;
+  if (gap) hue = high === r ? ((g - b) / gap) % 6 : high === g ? (b - r) / gap + 2 : (r - g) / gap + 4;
+  return { h: (hue * 60 + 360) % 360, s: high ? gap / high : 0, v: high };
+}
+
+function hsvToHex({ h, s, v }) {
+  const channel = (n) => {
+    const k = (n + h / 60) % 6;
+    return Math.round((v - v * s * Math.max(0, Math.min(k, 4 - k, 1))) * 255).toString(16).padStart(2, "0");
+  };
+  return `#${channel(5)}${channel(3)}${channel(1)}`;
+}
+
+function wheelHtml(item) {
+  const { h, s: sat, v } = state.legendDraft.hsv;
+  const angle = (h * Math.PI) / 180;
+  return `<div class="wheel-pop">
+      <div class="color-wheel" data-wheel="${esc(item.id)}" style="--dim:${(1 - v).toFixed(3)}"><i class="wheel-knob" style="left:${50 + Math.sin(angle) * sat * 50}%;top:${50 - Math.cos(angle) * sat * 50}%;background:${esc(item.color)}"></i></div>
+      <div class="wheel-fields">
+        <label class="field">Brightness<input class="wheel-bright" type="range" min="0" max="100" step="1" value="${Math.round(v * 100)}" data-wheel-bright="${esc(item.id)}" style="--full:${hsvToHex({ h, s: sat, v: 1 })}" /></label>
+        <label class="field">Hex<input value="${esc(item.color)}" data-wheel-hex="${esc(item.id)}" maxlength="7" autocomplete="off" spellcheck="false" /></label>
+      </div>
+    </div>`;
+}
+
+/* The open wheel's hue, saturation, and brightness are the source of truth, so moving the slider to black and back keeps the hue. */
+function syncWheel(id, typing = false) {
+  const draft = state.legendDraft;
+  const { h, s: sat, v } = draft.hsv;
+  const color = hsvToHex(draft.hsv);
+  draft.categories.find((item) => item.id === id).color = color;
+  const line = document.querySelector(`.legend-line[data-line="${CSS.escape(id)}"]`);
+  line?.querySelector(".orb")?.style.setProperty("--orb", color);
+  line?.querySelectorAll(".color-dot:not(.wheel-dot)").forEach((dot) => dot.classList.toggle("is-on", dot.dataset.color === color));
+  const wheel = $(".color-wheel");
+  wheel?.style.setProperty("--dim", (1 - v).toFixed(3));
+  const knob = $(".wheel-knob");
+  if (knob) {
+    const angle = (h * Math.PI) / 180;
+    knob.style.left = `${50 + Math.sin(angle) * sat * 50}%`;
+    knob.style.top = `${50 - Math.cos(angle) * sat * 50}%`;
+    knob.style.background = color;
+  }
+  const slider = $(".wheel-bright");
+  if (slider) {
+    slider.value = String(Math.round(v * 100));
+    slider.style.setProperty("--full", hsvToHex({ h, s: sat, v: 1 }));
+  }
+  const hex = $(".wheel-pop [data-wheel-hex]");
+  if (hex && !typing) hex.value = color;
+}
+
+function bindColorWheel() {
+  const wheel = $(".color-wheel");
+  if (!wheel) return;
+  const id = wheel.dataset.wheel;
+  const pick = (event) => {
+    const box = wheel.getBoundingClientRect();
+    const dx = event.clientX - (box.left + box.width / 2);
+    const dy = event.clientY - (box.top + box.height / 2);
+    const draft = state.legendDraft;
+    draft.hsv = { ...draft.hsv, h: ((Math.atan2(dx, -dy) * 180) / Math.PI + 360) % 360, s: Math.min(1, Math.hypot(dx, dy) / (box.width / 2)) };
+    syncWheel(id);
+  };
+  wheel.addEventListener("pointerdown", (event) => {
+    wheel.setPointerCapture(event.pointerId);
+    pick(event);
+  });
+  wheel.addEventListener("pointermove", (event) => {
+    if (event.buttons) pick(event);
+  });
+}
+
+function kindSwatchFor(kind) {
+  const draft = state.legendDraft;
+  const item = draft.categories.find((row) => row.id === (draft.kindMap[kind] || "other"));
+  return `<i class="orb" style="--orb:${esc(item?.color || "#ff8a1f")}"></i>`;
+}
+
+async function refreshNode(id) {
+  const host = graphHost();
+  if (host) host.node = await api(`/graph/node${qs({ id, session_id: hostSession(host) })}`);
+  paintView();
+}
+
+/* Privacy & sources */
+
+const SOURCE_GROUPS = [
+  ["screen", "Screen", "What you record"],
+  ["ai", "AI tools", "Your prompts and chats"],
+  ["email", "Email", "Who you write to, and what about"],
+  ["calendar", "Calendar", "Meetings, people, places"],
+  ["messages", "Messages", "Only the chats you pick"],
+  ["files", "Files and notes", "Documents you work on"],
+  ["browser", "Browser", "Pages you visit"],
+];
+const SOURCE_STATUS = {
+  connected: "On", off: "Off", needs_setup: "Set up", needs_permission: "Needs access", unavailable: "Unavailable", error: "Problem",
+};
+
+async function refreshSources() {
+  state.sources = await api("/sources");
+  if (state.view === "sources") paintView();
+}
+
+function sourceActions(source) {
+  const id = esc(source.id);
+  const on = source.enabled && source.status === "connected";
+  const parts = [];
+  if (source.managed) parts.push('<button class="btn sm" type="button" data-act="nav" data-view="knowledge">Record</button>');
+  else if (source.importable) parts.push(`<label class="btn sm file-btn">Import a file<input type="file" hidden data-change="source-import" data-id="${id}" /></label>`);
+  else if (source.oauth && source.connectable && source.status === "needs_setup") parts.push(`<button class="btn sm primary" type="button" data-act="source-connect" data-id="${id}">Connect</button>`);
+  else if (source.status === "needs_permission") parts.push('<a class="btn sm" href="x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles">Open privacy settings</a>');
+  if (["imessage", "whatsapp"].includes(source.id) && source.status !== "needs_permission" && source.status !== "unavailable") parts.push(`<button class="btn sm" type="button" data-act="chats-open" data-id="${id}">Choose chats</button>`);
+  if (on && !source.managed && !source.importable) parts.push(`<button class="btn sm" type="button" data-act="source-sync" data-id="${id}">Sync now</button>`);
+  if (source.items > 0 && !source.managed) parts.push(`<button class="btn sm" type="button" data-act="source-forget" data-id="${id}">Forget</button>`);
+  return parts.join("");
+}
+
+function sourceRow(source) {
+  const on = source.enabled && source.status === "connected";
+  const attention = ["needs_permission", "needs_setup", "error"].includes(source.status);
+  const canToggle = !source.managed && !source.importable && source.status !== "unavailable" && !(source.oauth && source.status === "needs_setup");
+  const detail = source.items > 0 ? `${source.items.toLocaleString()} item${source.items === 1 ? "" : "s"}${source.last_sync ? ` · ${stamp(source.last_sync)}` : ""}` : source.status_detail || "";
+  const folders = source.id === "local-folders" ? `<form class="inline folder-add" data-form="folder-add"><input name="path" placeholder="/Users/you/Documents/Notes" aria-label="Folder path" autocomplete="off" /><button class="btn sm" type="submit">Add folder</button></form>
+    ${(source.options?.folders || []).length ? `<div class="tags">${source.options.folders.map((folder) => `<span class="tag">${esc(folder)} <button class="link" type="button" data-act="folder-remove" data-path="${esc(folder)}" aria-label="Remove ${esc(folder)}">×</button></span>`).join("")}</div>` : ""}` : "";
+  const chats = source.options?.chats?.length ? `<p class="faint">Reading ${source.options.chats.length} chat${source.options.chats.length === 1 ? "" : "s"}</p>` : "";
+  return `<article class="src-row ${on || source.managed ? "is-lit" : ""} ${attention ? "is-warn" : ""} ${source.status === "unavailable" ? "is-off" : ""}">
+    <i class="src-orb"></i>
+    <div class="src-main">
+      <div class="src-name"><strong>${esc(source.name)}</strong><span>${esc(source.managed ? "Per recording" : source.importable && !source.items ? "Import" : SOURCE_STATUS[source.status] || source.status)}</span></div>
+      <p>${esc(source.description)}</p>
+      ${detail ? `<p class="faint">${esc(detail)}</p>` : ""}
+      ${source.last_error && source.status !== "needs_permission" ? `<p class="proposal-error">${esc(source.last_error)}</p>` : ""}
+      ${chats}${folders}
+    </div>
+    <div class="src-actions">${sourceActions(source)}</div>
+    ${canToggle ? `<label class="switch"><input type="checkbox" data-change="source-toggle" data-id="${esc(source.id)}" ${source.enabled ? "checked" : ""} aria-label="Read ${esc(source.name)}" /><i></i></label>` : '<span class="switch-gap"></span>'}
+  </article>`;
+}
+
+/* The first look at the page counts the numbers up. Repaints after that show them plainly. */
+const COUNT_MS = 900;
+
+function animateSummary() {
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+  const started = performance.now();
+  const counters = [...document.querySelectorAll(".src-fact [data-count]")];
+  counters.forEach((node) => {
+    node.style.minWidth = `${node.offsetWidth}px`;
+  });
+  const count = (now) => {
+    if (!counters[0]?.isConnected) return;
+    const progress = Math.min(1, (now - started) / COUNT_MS);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    counters.forEach((node) => {
+      node.textContent = `${Math.round(Number(node.dataset.count) * eased).toLocaleString()}${node.dataset.suffix}`;
+    });
+    if (progress < 1) requestAnimationFrame(count);
+  };
+  count(started);
+}
+
+function sourcesHtml() {
+  const data = state.sources || { data: [], privacy: {} };
+  const privacy = data.privacy || {};
+  const lit = data.data.filter((item) => item.enabled && item.status === "connected").length;
+  const facts = [
+    [lit, "", lit === 1 ? "Source on" : "Sources on"],
+    [privacy.items || 0, "", "Items read"],
+    [privacy.frames || 0, "", "Frames recorded"],
+    [Number(privacy.retention_days) || "Forever", Number(privacy.retention_days) ? " days" : "", "Kept for"],
+  ].map(([value, suffix, label]) => `<div class="src-fact"><strong ${typeof value === "number" ? `data-count="${value}" data-suffix="${esc(suffix)}"` : ""}>${esc(typeof value === "number" ? value.toLocaleString() : value)}${esc(suffix)}</strong><span>${esc(label)}</span></div>`).join("");
+  const groups = SOURCE_GROUPS.map(([id, title, hint]) => {
+    const rows = data.data.filter((item) => item.category === id);
+    if (!rows.length) return "";
+    const live = rows.filter((item) => item.enabled && item.status === "connected").length;
+    return `<section class="src-group"><header><h2>${esc(title)}</h2><p>${esc(hint)}${live ? ` <span class="src-live">${live} on</span>` : ""}</p></header><div class="src-rows">${rows.map(sourceRow).join("")}</div></section>`;
+  }).join("");
+  return `<div class="stack sources-page">
+    ${pageHead("Privacy & Sources")}
+    <div class="src-facts">${facts}</div>
+    <div class="src-rules"><button class="btn sm" type="button" data-act="nav" data-view="settings">Retention and redaction</button></div>
+    ${groups}
+  </div>`;
+}
+
 /* Integrations */
 
 function clientDetail(item) {
   const selected = state.client;
-  if (item.connected) {
-    return `<div class="client-detail">
-      
-      ${selected.path ? `<p class="meta"><code>${esc(selected.path)}</code></p>` : ""}
-      <div class="actions"><button class="btn sm danger" type="button" data-act="client-uninstall" data-id="${esc(item.id)}">Disconnect</button></div>
-    </div>`;
-  }
+  const open = Boolean(selected.showConfig);
+  const steps = item.connected ? "" : `<ol class="steps-list">${(selected.steps || []).map((step) => `<li>${esc(step)}</li>`).join("")}</ol>`;
+  // The main action leads and is larger. A client that can't be installed leads with its setup instead.
+  const lead = item.connected
+    ? `<button class="btn danger" type="button" data-act="client-uninstall" data-id="${esc(item.id)}">Disconnect</button>`
+    : item.installable
+      ? `<button class="btn primary" type="button" data-act="client-install" data-id="${esc(item.id)}">Install</button>`
+      : "";
+  const view = `<button class="btn ${lead ? "" : "primary"}" type="button" data-act="client-config" aria-expanded="${open}">${open ? "Hide" : "View"}</button>`;
   return `<div class="client-detail">
-    ${selected.path ? `<p class="meta"><code>${esc(selected.path)}</code></p>` : ""}
-    <pre>${esc(selected.snippet)}</pre>
-    <ol class="steps-list">${(selected.steps || []).map((step) => `<li>${esc(step)}</li>`).join("")}</ol>
-    <div class="actions"><button class="btn sm" type="button" data-act="copy-snippet">Copy</button>${item.installable ? `<button class="btn sm primary" type="button" data-act="client-install" data-id="${esc(item.id)}">Install</button>` : ""}</div>
+    ${steps}
+    <div class="actions client-actions">${lead}${view}<button class="btn" type="button" data-act="copy-snippet">Copy</button></div>
+    ${open ? `${selected.path ? `<p class="meta"><code>${esc(selected.path)}</code></p>` : ""}<pre>${esc(selected.snippet)}</pre>` : ""}
   </div>`;
 }
 
@@ -2047,11 +2373,11 @@ function integrationsHtml() {
   const tile = (item) => {
     const open = state.client?.id === item.id;
     const found = item.connected || item.detected;
-    const flag = item.connected ? "connected" : item.detected ? "detected" : item.transport === "http" ? "remote" : "local";
+    const flag = item.connected ? "Connected" : item.detected ? "Detected" : item.transport === "http" ? "Remote" : "Local";
     return `<article class="tile client-tile ${found ? "is-found" : ""} ${open ? "is-open" : ""}">
       <h3>${esc(item.label)}</h3>
       <span class="pill ${found ? "found" : ""}">${flag}</span>
-      <button class="btn sm" type="button" data-act="client" data-id="${esc(item.id)}" aria-expanded="${open}">${open ? "Close" : item.connected ? "Disconnect" : "Connect"}</button>
+      ${open ? closeX(`data-act="client" data-id="${esc(item.id)}" aria-expanded="true"`) : `<button class="btn sm" type="button" data-act="client" data-id="${esc(item.id)}" aria-expanded="false">${item.connected ? "Disconnect" : "Connect"}</button>`}
       ${open ? clientDetail(item) : ""}
     </article>`;
   };
@@ -2062,6 +2388,7 @@ function integrationsHtml() {
   const fileLabels = { zip: ".zip", md: "One .md", json: "Graph JSON", cypher: "Cypher", graphml: "GraphML" };
   const destinations = DESTINATIONS.map((item) => `<tr><td><strong>${esc(item.name)}</strong><br><span class="faint">${esc(item.how)}</span></td><td class="right"><a class="btn sm" href="${href(item.format)}" download>${esc(fileLabels[item.format])}</a></td></tr>`).join("");
   return `<div class="stack">
+    ${pageHead("Integrations")}
     ${section("Agent providers over MCP", `      <p class="label">On this computer</p><div class="tile-grid">${groups.stdio.map(tile).join("")}</div>
       <p class="label">Remote and APIs</p><div class="tile-grid">${groups.http.map(tile).join("")}</div>`)}
     ${section("Packaged installs", `<div class="tile-grid wide">${packages}</div>`)}
@@ -2123,6 +2450,7 @@ function modelSection() {
 function settingsHtml() {
   const s = state.settings || {};
   return `<div class="stack narrow-page">
+    ${pageHead("Settings")}
     ${section(
       "Capture",
       `<form class="stack" data-form="capture-settings">
@@ -2130,8 +2458,9 @@ function settingsHtml() {
           <label class="field">Seconds between samples <input name="capture_interval_secs" type="number" min="1" max="600" value="${esc(s.capture_interval_secs)}" /></label>
           <label class="field">Idle after (seconds) <input name="idle_threshold_secs" type="number" min="15" value="${esc(s.idle_threshold_secs)}" /></label>
         </div>
-        <div class="checks">${toggle("capture_screenshots", "Screenshots", s.capture_screenshots)}${toggle("capture_ocr", s.ocr_available ? "OCR when accessibility text is missing" : "OCR (needs tesseract: brew install tesseract)", s.capture_ocr)}${toggle("capture_clipboard", "Clipboard changes", s.capture_clipboard)}${toggle("redact", "Redact emails and secrets", s.redact)}</div>
+        <div class="checks">${toggle("capture_screenshots", "Screenshots", s.capture_screenshots)}${toggle("capture_ocr", "OCR when accessibility text is missing", s.capture_ocr)}${toggle("capture_clipboard", "Clipboard changes", s.capture_clipboard)}${toggle("redact", "Redact emails and secrets", s.redact)}</div>
         <div class="actions"><button class="btn primary" type="submit">Save capture settings</button></div>
+        <p class="tesseract-warning" id="tesseract-warning" ${s.capture_ocr && !s.ocr_available ? "" : "hidden"}>Warning: OCR needs Tesseract (brew install tesseract)</p>
       </form>`,
     )}
     ${section(
@@ -2198,7 +2527,7 @@ async function miniToggle() {
   }
   mini.busy = false;
   await miniTick();
-  if (!state.standalone && state.view === "recordings" && !state.ctx) await go("recordings");
+  if (!state.standalone && state.view === "knowledge" && !state.ctx) await go("knowledge");
 }
 
 async function openMini() {
@@ -2254,6 +2583,7 @@ function viewHtml() {
     contexts: contextsHtml,
     workflows: workflowsHtml,
     integrations: integrationsHtml,
+    sources: sourcesHtml,
     settings: settingsHtml,
   };
   return (views[state.view] || recordingsHtml)();
@@ -2271,6 +2601,7 @@ function paintView() {
     view.classList.toggle("enter", place !== state.place);
     state.place = place;
   }
+  paintGraphOverlay();
   const input = $("#chat-input");
   if (input && draft) input.value = draft;
   const compose = $("#ide-input");
@@ -2282,6 +2613,10 @@ function paintView() {
   $("#ide-new-title")?.focus();
   mountGraph();
   syncChrome();
+  if (state.view === "sources" && state.summaryPending) {
+    state.summaryPending = false;
+    animateSummary();
+  }
 }
 
 function paint() {
@@ -2314,7 +2649,7 @@ function frameDrawer(bundle) {
     .map((line) => `<div class="line"><span class="who">${esc(line.speaker_name || "Audio")}</span><div>${esc(line.transcription)}</div></div>`)
     .join("");
   return `<div class="backdrop" data-act="close"><aside class="sheet" data-sheet>
-    <header><div><p class="label">${esc(stamp(frame.timestamp))} · frame ${frame.frame_id}${frame.session_id ? ` · recording ${frame.session_id}` : ""}</p><h2>${esc(frame.app_name)} · ${esc(frame.window_name)}</h2></div><button class="btn sm" type="button" data-act="close">Close</button></header>
+    <header><div><p class="label">${esc(stamp(frame.timestamp))} · frame ${frame.frame_id}${frame.session_id ? ` · recording ${frame.session_id}` : ""}</p><h2>${esc(frame.app_name)} · ${esc(frame.window_name)}</h2></div>${closeX()}</header>
     ${frame.browser_url ? `<p class="meta"><a href="${esc(frame.browser_url)}" target="_blank" rel="noreferrer">${esc(frame.browser_url)}</a></p>` : ""}
     ${shot}
     <p class="snippet">${esc(frame.text || "")}</p>
@@ -2328,7 +2663,7 @@ function frameDrawer(bundle) {
 
 function textDrawer(title, text, meta) {
   return `<div class="backdrop" data-act="close"><aside class="sheet" data-sheet>
-    <header><div><p class="label">${esc(meta || "")}</p><h2>${esc(title)}</h2></div><button class="btn sm" type="button" data-act="close">Close</button></header>
+    <header><div><p class="label">${esc(meta || "")}</p><h2>${esc(title)}</h2></div>${closeX()}</header>
     <p class="snippet">${esc(text || "")}</p>
   </aside></div>`;
 }
@@ -2346,13 +2681,13 @@ async function finishOnboarding(start) {
   if (start === "demo") {
     await api("/demo/load", { method: "POST" });
     toast("Sample workday loaded");
-    await go("recordings", { landing: true });
+    await go("knowledge");
     return;
   }
   if (start === "record") {
     await api("/sessions", { method: "POST", body: JSON.stringify({ duration: "15m", label: "First recording" }) });
     toast("Recording for 15 minutes");
-    await go("recordings");
+    await go("knowledge");
     return;
   }
   await go("integrations");
@@ -2442,6 +2777,7 @@ const actions = {
   },
   "wiz-example"(button) {
     state.wizard.name = button.dataset.name;
+    if (!state.wizard.purpose.trim()) state.wizard.purpose = button.dataset.purpose || "";
     paintView();
   },
   async "wiz-next"() {
@@ -2512,7 +2848,14 @@ const actions = {
         method: "POST",
         body: JSON.stringify({ name: wiz.name, purpose: wiz.purpose, session_ids: wiz.session_ids, context_ids: wiz.context_ids, workflow_ids: wiz.workflow_ids, new_workflows: writing }),
       });
-      if (made.not_written.length) toast(`Your recordings don't show: ${made.not_written.join(", ")}`);
+      const notes = made.not_written.length ? [`Your recordings don't show: ${made.not_written.join(", ")}.`] : [];
+      const connecting = wizardClients();
+      if (connecting.length) {
+        wiz.note = `Connecting ${connecting.map(clientName).join(", ")}.`;
+        paintView();
+        notes.push(...await connectClients(connecting));
+      }
+      if (notes.length) toast(notes.join(" "));
       await go("harnesses", { ide: newIde(made.id) });
     } catch (error) {
       wiz.busy = false;
@@ -2605,7 +2948,58 @@ const actions = {
     await sendChat(button.dataset.q);
     paintView();
   },
+  async "proposal-start"(button) {
+    const item = chatTurns()[Number(button.dataset.turn)].proposals[Number(button.dataset.index)];
+    item.status = "running";
+    item.error = "";
+    syncThread();
+    try {
+      Object.assign(item, await startProposal(item), { status: "done" });
+    } catch (error) {
+      Object.assign(item, { status: "failed", error: error.message || "Request failed" });
+    }
+    syncThread();
+    await saveChat();
+  },
+  "proposal-dismiss"(button) {
+    chatTurns()[Number(button.dataset.turn)].proposals[Number(button.dataset.index)].status = "dismissed";
+    syncThread();
+    saveChat();
+  },
+  async "history-toggle"() {
+    state.historyOpen = !state.historyOpen;
+    state.chatHistory = null;
+    paintChatTools();
+    if (state.historyOpen) await loadChatHistory();
+  },
+  async "history-open"(button) {
+    showChat(chatKey(), await api(`/brain/chats/${Number(button.dataset.id)}`));
+    state.historyOpen = false;
+    syncThread();
+    mountGraph();
+  },
+  async "history-delete"(button) {
+    const id = Number(button.dataset.id);
+    const key = chatKey();
+    await api(`/brain/chats/${id}`, { method: "DELETE" });
+    if (state.chatIds[key] === id) {
+      state.chatIds[key] = null;
+      state.chats[key] = [];
+      if (key === "brain") state.chatFocus = null;
+      syncThread();
+      mountGraph();
+    }
+    await loadChatHistory();
+  },
+  "brain-node-clear"() {
+    state.brain.node = null;
+    paintView();
+  },
   "chat-clear"() {
+    if (chatKey() === "brain") state.chatFocus = null;
+    state.chatIds[chatKey()] = null;
+    state.chatsRestored.add(chatKey());
+    state.historyOpen = false;
     state.chats[chatKey()] = [];
     paintView();
   },
@@ -2649,7 +3043,7 @@ const actions = {
       return;
     }
     await api(`/sessions/${button.dataset.id}`, { method: "DELETE" });
-    await loadView("recordings");
+    await loadView("knowledge");
     paint();
     toast("Recording deleted");
   },
@@ -2673,6 +3067,106 @@ const actions = {
     const made = await api("/contexts", { method: "POST", body: JSON.stringify({ task: button.dataset.label, session_id: scope.session_id || null }) });
     toast("Context file written");
     await openDoc(made.id);
+  },
+  async "graph-expand"() {
+    state.graphExpanded = !state.graphExpanded;
+    state.historyOpen = false;
+    await restoreChat();
+    paintView();
+  },
+  "legend-focus"(button) {
+    state.legendFocus = state.legendFocus === button.dataset.id ? null : button.dataset.id;
+    document.querySelectorAll(".legend-row").forEach((row) => row.classList.toggle("is-on", row.dataset.id === state.legendFocus));
+    mountGraph();
+  },
+  async "legend-edit"() {
+    state.legend = await api("/legend");
+    const kindMap = {};
+    for (const item of state.legend.categories) for (const kind of item.kinds) kindMap[kind] = item.id;
+    state.legendDraft = { categories: state.legend.categories.map((item) => ({ ...item })), kindMap, next: 1 };
+    paintLegendEditor();
+  },
+  "legend-add"() {
+    const draft = state.legendDraft;
+    const palette = state.legend.palette;
+    const id = `new-${draft.next++}`;
+    draft.categories.push({ id, label: "", color: palette[draft.categories.length % palette.length], fresh: true });
+    draft.wheel = id;
+    paintLegendEditor();
+    [...document.querySelectorAll("[data-legend-name]")].at(-1)?.focus();
+  },
+  "legend-remove"(button) {
+    const draft = state.legendDraft;
+    draft.categories = draft.categories.filter((item) => item.id !== button.dataset.id);
+    for (const [kind, id] of Object.entries(draft.kindMap)) if (id === button.dataset.id) delete draft.kindMap[kind];
+    paintLegendEditor();
+  },
+  "legend-wheel"(button) {
+    const draft = state.legendDraft;
+    draft.wheel = draft.wheel === button.dataset.id ? null : button.dataset.id;
+    paintLegendEditor();
+  },
+  "legend-color"(button) {
+    state.legendDraft.categories.find((item) => item.id === button.dataset.id).color = button.dataset.color;
+    paintLegendEditor();
+  },
+  async "legend-save"(button) {
+    const draft = state.legendDraft;
+    const note = $("#legend-note");
+    const body = draft.categories.map((item) => ({ id: item.fresh ? null : item.id, label: item.label, color: item.color, kinds: Object.keys(draft.kindMap).filter((kind) => draft.kindMap[kind] === item.id) }));
+    button.disabled = true;
+    try {
+      state.legend = await api("/legend", { method: "PUT", body: JSON.stringify({ categories: body }) });
+      closeDrawer();
+      paintView();
+      toast("Legend saved");
+    } catch (error) {
+      note.textContent = error.message || "Request failed";
+      button.disabled = false;
+    }
+  },
+  async "node-reset"(button) {
+    state.legend = await api("/graph/node-override", { method: "PUT", body: JSON.stringify({ id: button.dataset.id }) });
+    await refreshNode(button.dataset.id);
+  },
+  async "source-sync"(button) {
+    button.disabled = true;
+    button.textContent = "Syncing…";
+    const result = await api(`/sources/${encodeURIComponent(button.dataset.id)}/sync`, { method: "POST" });
+    toast(result.status === "connected" ? `${result.added} new` : result.detail || "Couldn't sync");
+    await refreshSources();
+  },
+  async "source-connect"(button) {
+    const started = await api(`/sources/${encodeURIComponent(button.dataset.id)}/connect`, { method: "POST" });
+    window.open(started.auth_url, "_blank", "noopener");
+  },
+  async "source-forget"(button) {
+    if (button.dataset.confirm !== "yes") {
+      button.dataset.confirm = "yes";
+      button.textContent = "Delete what it read?";
+      return;
+    }
+    const result = await api(`/sources/${encodeURIComponent(button.dataset.id)}/disconnect`, { method: "POST", body: JSON.stringify({ forget: true }) });
+    toast(`Deleted ${result.items_deleted} item${result.items_deleted === 1 ? "" : "s"}`);
+    await refreshSources();
+    state.legend = await api("/legend");
+  },
+  async "folder-remove"(button) {
+    const source = state.sources.data.find((item) => item.id === "local-folders");
+    await api("/sources/local-folders", { method: "POST", body: JSON.stringify({ options: { folders: source.options.folders.filter((folder) => folder !== button.dataset.path) } }) });
+    await refreshSources();
+  },
+  async "chats-open"(button) {
+    const id = button.dataset.id;
+    const source = state.sources.data.find((item) => item.id === id);
+    const found = await api(`/sources/${encodeURIComponent(id)}/choices`);
+    const chosen = new Set(source.options.chats || []);
+    const rows = found.data.map((chat) => `<label class="pick"><input type="checkbox" name="chat" value="${esc(chat.id)}" ${chosen.has(chat.id) ? "checked" : ""} /><span><strong>${esc(chat.label)}</strong><span class="faint">${chat.count} message${chat.count === 1 ? "" : "s"}</span></span></label>`).join("");
+    $("#drawer").innerHTML = `<div class="backdrop center" data-act="close"><form class="modal" data-sheet data-form="chats-save" data-id="${esc(id)}">
+      <header><h2>${esc(source.name)} chats to read</h2>${closeX()}</header>
+      <div class="pick-list tall">${rows || '<p class="faint">No chats found.</p>'}</div>
+      <div class="actions"><button class="btn primary" type="submit">Save</button></div>
+    </form></div>`;
   },
   "graph-kind"(button) {
     state.ctx.graphKind = button.dataset.kind;
@@ -2758,6 +3252,10 @@ const actions = {
     paintView();
     toast(result.restart ? `Disconnected, restart ${result.restart} to finish` : "Disconnected");
   },
+  "client-config"() {
+    state.client.showConfig = !state.client.showConfig;
+    paintView();
+  },
   "copy-snippet"() {
     if (state.client) copy(state.client.snippet);
   },
@@ -2779,7 +3277,7 @@ const actions = {
   async demo() {
     const result = await api("/demo/load", { method: "POST" });
     toast(result.loaded ? "Sample workday loaded" : "History is not empty; use Replace in Settings");
-    await go("recordings", { landing: Boolean(result.loaded) });
+    await go("knowledge");
   },
   async "demo-replace"(button) {
     if (button.dataset.confirm !== "yes") {
@@ -2789,7 +3287,7 @@ const actions = {
     }
     await api("/demo/load?replace=true", { method: "POST" });
     toast("History replaced with the sample workday");
-    await go("recordings", { landing: true });
+    await go("knowledge");
   },
   async "context-new"(button) {
     const [sessions, saved, flows] = await Promise.all([api("/sessions?limit=200"), api("/contexts?limit=500"), api("/workflows")]);
@@ -2798,6 +3296,8 @@ const actions = {
     state.workflows = flows;
     $("#drawer").innerHTML = contextDialog(button.dataset.session || "");
     $("#drawer input[name=name]")?.focus();
+    const session = Number(button.dataset.session);
+    askSuggestions("context", session ? { session_ids: [session] } : {});
   },
   async "workflow-new"(button) {
     const [sessions, saved, llm] = await Promise.all([api("/sessions?limit=200"), api("/contexts?limit=300"), api("/llm/status")]);
@@ -2805,6 +3305,23 @@ const actions = {
     state.saved = saved.data;
     state.llm = llm;
     $("#drawer").innerHTML = workflowDialog(button.dataset.session || "", button.dataset.context || "");
+    const session = Number(button.dataset.session);
+    const context = Number(button.dataset.context);
+    askSuggestions("workflow", { ...(session ? { session_ids: [session] } : {}), ...(context ? { context_ids: [context] } : {}) });
+  },
+  "suggest-apply"(button) {
+    applySuggestion(button.closest("form"), state.fieldSuggest.options[Number(button.dataset.index)]);
+  },
+  async "suggest-rest"(button) {
+    const form = button.closest("form");
+    const typed = formFields(form);
+    if (!typed.name.trim() && !typed.description.trim()) {
+      form.querySelector("[id$=-note]").textContent = "Type a name or description first, or pick a suggestion.";
+      return;
+    }
+    form.querySelector("[id$=-note]").textContent = "";
+    const found = await askSuggestions(form.dataset.form === "context-new" ? "context" : "workflow", typed);
+    if (found?.options?.[0] && form.isConnected) applySuggestion(form, found.options[0], true);
   },
   "pick-all"(button) {
     document.querySelectorAll(`.modal input[name=${button.dataset.name}]`).forEach((box) => {
@@ -2836,6 +3353,33 @@ const forms = {
     ide.engineFind = q ? await api(`/harnesses/${ide.id}/engine/search${qs({ q })}`) : null;
     paintView();
   },
+  async "node-edit"(form) {
+    const data = new FormData(form);
+    const id = form.dataset.id;
+    const label = String(data.get("label") || "").trim();
+    const original = graphHost()?.node?.node?.label;
+    state.legend = await api("/graph/node-override", { method: "PUT", body: JSON.stringify({ id, label: label === original ? null : label, category: String(data.get("category") || "") }) });
+    const cluster = String(data.get("cluster") || "");
+    if (cluster && cluster !== state.clusters?.members?.[id]) state.clusters = await api("/graph/node-cluster", { method: "PUT", body: JSON.stringify({ id, cluster }) });
+    await refreshNode(id);
+    toast("Saved");
+  },
+  async "chats-save"(form) {
+    const chats = new FormData(form).getAll("chat").map(String);
+    await api(`/sources/${encodeURIComponent(form.dataset.id)}`, { method: "POST", body: JSON.stringify({ enabled: true, options: { chats } }) });
+    closeDrawer();
+    await refreshSources();
+    await api(`/sources/${encodeURIComponent(form.dataset.id)}/sync`, { method: "POST" });
+    await refreshSources();
+  },
+  async "folder-add"(form) {
+    const path = String(new FormData(form).get("path") || "").trim();
+    if (!path) return;
+    const source = state.sources.data.find((item) => item.id === "local-folders");
+    await api("/sources/local-folders", { method: "POST", body: JSON.stringify({ enabled: true, options: { folders: [...(source.options.folders || []), path] } }) });
+    await api("/sources/local-folders/sync", { method: "POST" });
+    await refreshSources();
+  },
   async chat(form) {
     await sendChat(String(new FormData(form).get("question") || ""));
   },
@@ -2850,7 +3394,7 @@ const forms = {
         interval_secs: Number(data.get("interval")) || null,
       }),
     });
-    await loadView("recordings");
+    await loadView("knowledge");
     paint();
     toast(duration === "open" ? "Recording until you stop it" : `Recording for ${duration}`);
   },
@@ -2979,6 +3523,29 @@ async function saveProvider(form, id) {
 }
 
 const changes = {
+  "legend-kind"(select) {
+    state.legendDraft.kindMap[select.dataset.kind] = select.value;
+    paintLegendEditor();
+  },
+  async "source-toggle"(box) {
+    const id = box.dataset.id;
+    await api(`/sources/${encodeURIComponent(id)}`, { method: "POST", body: JSON.stringify({ enabled: box.checked }) });
+    await refreshSources();
+    const source = state.sources.data.find((item) => item.id === id);
+    if (box.checked && source?.status === "connected" && !source.options?.chats && !["imessage", "whatsapp", "local-folders"].includes(id)) {
+      await api(`/sources/${encodeURIComponent(id)}/sync`, { method: "POST" });
+      await refreshSources();
+    }
+  },
+  async "source-import"(input) {
+    const file = input.files?.[0];
+    if (!file) return;
+    const headers = token() ? { Authorization: `Bearer ${token()}` } : {};
+    const response = await fetch(`/sources/${encodeURIComponent(input.dataset.id)}/import?filename=${encodeURIComponent(file.name)}`, { method: "POST", headers, body: file });
+    const result = await response.json();
+    toast(response.ok ? `Imported ${result.added} new item${result.added === 1 ? "" : "s"}` : result.error || "Import failed");
+    await refreshSources();
+  },
   "export-harness"(select) {
     state.exportHarness = select.value;
     paintView();
@@ -3018,11 +3585,20 @@ document.addEventListener("change", async (event) => {
   const target = event.target;
   const handler = changes[target?.dataset?.change];
   if (handler) handler(target);
+  if (target?.name === "capture_ocr") {
+    const warning = $("#tesseract-warning");
+    if (warning) warning.hidden = !target.checked || Boolean(state.settings?.ocr_available);
+  }
   if (target?.dataset?.wizPick) {
     const list = state.wizard[target.dataset.wizPick];
     const id = Number(target.value);
     state.wizard[target.dataset.wizPick] = target.checked ? [...list, id] : list.filter((item) => item !== id);
     target.closest(".pick")?.classList.toggle("is-on", target.checked);
+  }
+  if (target?.dataset && "wizClient" in target.dataset) {
+    const wiz = state.wizard;
+    wiz.client_ids = target.checked ? [...wiz.client_ids, target.value] : wiz.client_ids.filter((id) => id !== target.value);
+    target.closest(".client-pick")?.classList.toggle("is-on", target.checked);
   }
   if ("engineSession" in (target?.dataset || {})) {
     const ide = state.ide;
@@ -3039,6 +3615,20 @@ document.addEventListener("change", async (event) => {
 
 document.addEventListener("input", (event) => {
   const target = event.target;
+  if (target.dataset?.legendName) {
+    state.legendDraft.categories.find((item) => item.id === target.dataset.legendName).label = target.value;
+    document.querySelectorAll(`.kind-line option[value="${CSS.escape(target.dataset.legendName)}"]`).forEach((option) => {
+      option.textContent = target.value || "New category";
+    });
+  }
+  if (target.dataset?.wheelHex && /^#[0-9a-f]{6}$/i.test(target.value)) {
+    state.legendDraft.hsv = hexToHsv(target.value.toLowerCase());
+    syncWheel(target.dataset.wheelHex, true);
+  }
+  if (target.dataset?.wheelBright) {
+    state.legendDraft.hsv = { ...state.legendDraft.hsv, v: Number(target.value) / 100 };
+    syncWheel(target.dataset.wheelBright);
+  }
   if (target.dataset?.wiz) state.wizard[target.dataset.wiz] = target.value;
   if (target.dataset?.wizFlow) state.wizard.new_workflows[Number(target.dataset.wizFlow)][target.dataset.key] = target.value;
   if (target.id === "ide-text") {
@@ -3110,6 +3700,11 @@ document.addEventListener("keydown", (event) => {
     event.target.dispatchEvent(new Event("input", { bubbles: true }));
     return;
   }
+  if (event.key === "Escape" && state.graphExpanded && !$("#drawer").innerHTML) {
+    state.graphExpanded = false;
+    paintView();
+    return;
+  }
   if (event.key === "Escape") closeDrawer();
 });
 
@@ -3143,9 +3738,9 @@ async function boot() {
       try {
         await loadView(state.view);
       } catch (error) {
-        state.view = "recordings";
+        state.view = "knowledge";
         state.ctx = null;
-        await loadView("recordings");
+        await loadView("knowledge");
         toast(error.message || "Could not open that page");
       }
     }
@@ -3162,3 +3757,33 @@ async function boot() {
 }
 
 boot();
+
+/* Button labels are title case, with small words lowercase. CSS can't express that, and buttons render from many places. */
+const SMALL_WORDS = new Set(["a", "an", "and", "as", "at", "but", "by", "for", "from", "in", "into", "nor", "of", "on", "or", "over", "per", "the", "to", "via", "vs", "with"]);
+
+function titleCase(text) {
+  const words = text.split(/(\s+)/);
+  const real = words.map((word, index) => (/\S/.test(word) ? index : -1)).filter((index) => index >= 0);
+  return words
+    .map((word, index) => {
+      const edge = index === real[0] || index === real[real.length - 1];
+      if (!/^[a-z]/.test(word)) return word;
+      if (!edge && SMALL_WORDS.has(word)) return word;
+      return word[0].toUpperCase() + word.slice(1);
+    })
+    .join("");
+}
+
+function titleCaseButtons(root = document.body) {
+  const buttons = root.matches?.(".btn") ? [root] : [...(root.querySelectorAll?.(".btn") || [])];
+  for (const button of buttons) {
+    for (const node of button.childNodes) {
+      if (node.nodeType !== Node.TEXT_NODE) continue;
+      const cased = titleCase(node.nodeValue);
+      if (cased !== node.nodeValue) node.nodeValue = cased;
+    }
+  }
+}
+
+new MutationObserver(() => titleCaseButtons()).observe(document.body, { childList: true, subtree: true, characterData: true });
+titleCaseButtons();

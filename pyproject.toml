@@ -41,10 +41,10 @@ chronicle = "chronicle.cli:main"
 chronicle-context = "chronicle.cli:main"
 
 [tool.setuptools]
-packages = ["chronicle"]
+packages = ["chronicle", "chronicle.sources"]
 
 [tool.setuptools.package-data]
-chronicle = ["web/*", "helpers/*"]
+chronicle = ["web/*", "web/logos/*", "web/vendor/*", "helpers/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

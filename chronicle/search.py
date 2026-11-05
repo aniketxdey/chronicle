@@ -100,6 +100,69 @@ def query(
     return collected
 
 
+def relevant(q: str | None, limit: int = 6, start_time: str | None = None, end_time: str | None = None) -> list[dict]:
+    """The best passages for a question, by BM25 rather than recency, each cut to the part that matched.
+
+    ``query`` keeps its newest-first order because a history search is a timeline. A question rarely matches on
+    every word, so its fallback to any word plus newest-first returns recent text that shares a word like "the".
+    """
+    terms = list(dict.fromkeys(token.lower() for token in _TOKEN.findall(q or "")))[:64]
+    if not terms or limit < 1:
+        return []
+    start, end, _ = _window(start_time, end_time)
+    expr = " OR ".join(f'"{term}"' for term in terms)
+    bounds, params = [], []
+    if start:
+        bounds.append("AND {column} >= ?")
+        params.append(start)
+    if end:
+        bounds.append("AND {column} <= ?")
+        params.append(end)
+    within = " ".join(bounds)
+    pool = limit * 4
+    try:
+        with db.conn() as connection:
+            memories = connection.execute(
+                f"SELECT created_at, content FROM memories WHERE {' AND '.join('content LIKE ?' for _ in terms)} ORDER BY created_at DESC LIMIT 2",
+                [f"%{term}%" for term in terms],
+            ).fetchall()
+            frames = connection.execute(
+                f"""
+                SELECT f.id AS frame_id, f.timestamp, f.app_name, f.window_name, f.browser_url, f.text_source,
+                       snippet(frames_fts, 1, '', '', ' … ', 48) AS text, bm25(frames_fts) AS rank
+                FROM frames_fts JOIN frames f ON f.id = frames_fts.frame_id
+                WHERE frames_fts MATCH ? {within.format(column="f.timestamp")} ORDER BY rank LIMIT ?
+                """,
+                [expr, *params, pool],
+            ).fetchall()
+            audio = connection.execute(
+                f"""
+                SELECT t.timestamp, s.name AS speaker, snippet(audio_fts, 1, '', '', ' … ', 48) AS text, bm25(audio_fts) AS rank
+                FROM audio_fts JOIN audio_transcriptions t ON t.id = audio_fts.transcription_id
+                LEFT JOIN speakers s ON s.id = t.speaker_id
+                WHERE audio_fts MATCH ? {within.format(column="t.timestamp")} ORDER BY rank LIMIT ?
+                """,
+                [expr, *params, pool],
+            ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    found = [{"type": "memory", "timestamp": row["created_at"], "frame_id": None, "app": None, "window": None, "url": None,
+              "text": row["content"], "rank": float("-inf")} for row in memories]
+    found += [{"type": row["text_source"], "timestamp": row["timestamp"], "frame_id": row["frame_id"], "app": row["app_name"],
+               "window": row["window_name"], "url": row["browser_url"], "text": row["text"], "rank": row["rank"]} for row in frames]
+    found += [{"type": "audio", "timestamp": row["timestamp"], "frame_id": None, "app": row["speaker"], "window": None, "url": None,
+               "text": row["text"], "rank": row["rank"]} for row in audio]
+    # A screen left open is recorded many times over; one copy of a passage is enough.
+    seen: set[str] = set()
+    results = []
+    for item in sorted(found, key=lambda entry: entry["rank"]):
+        key = " ".join((item["text"] or "").split()).lower()
+        if key and key not in seen:
+            seen.add(key)
+            results.append({name: value for name, value in item.items() if name != "rank"})
+    return results[:limit]
+
+
 def _collect(**filters) -> dict:
     limit = filters["limit"]
     offset = filters["offset"]

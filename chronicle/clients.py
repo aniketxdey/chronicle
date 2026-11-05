@@ -112,6 +112,15 @@ CLIENTS: dict[str, dict] = {
 }
 
 
+# Files in web/logos.
+LOGOS = {
+    "claude-desktop": "claude", "claude-code": "claudecode", "cursor": "cursor", "vscode": "githubcopilot",
+    "windsurf": "windsurf", "codex": "codex", "gemini-cli": "geminicli", "cline": "cline", "lm-studio": "lmstudio",
+    "zed": "zed", "goose": "goose", "chatgpt": "openai", "openai-api": "openai", "anthropic-api": "anthropic",
+    "gemini-api": "gemini", "continue": "continue", "http": "http",
+}
+
+
 def _connected(spec: dict, path: str | Path | None = None) -> bool | None:
     """Whether this client's config holds Chronicle. None when Chronicle can't tell, such as remote clients."""
     kind = spec["kind"]
@@ -137,6 +146,7 @@ def catalog() -> list[dict]:
         items.append({
             "id": client_id,
             "label": spec["label"],
+            "logo": f"{LOGOS[client_id]}.svg" if client_id in LOGOS else None,
             "transport": "http" if spec["kind"] == "remote" else "stdio",
             "installable": spec["kind"] in {"json", "toml"} or (spec["kind"] == "cli" and bool(shutil.which("claude"))),
             "config_path": str(path) if path else None,

@@ -4,22 +4,27 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import html
 import json
 import os
 import secrets
 import shutil
 import sys
+import tempfile
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from chronicle import __version__, artifacts, capture, clients, content, context, contexts, db, graph, llm, harness, mcp_server, meetings, search, seed, sessions, tuner, workflows
+from chronicle import __version__, artifacts, brain, capture, clients, content, context, contexts, db, graph, llm, harness, mcp_server, meetings, search, seed, sessions, tuner, workflows
 from chronicle import ask as ask_mod
+from chronicle import clusters, itemgraph, legend, oauth
+from chronicle.sources import base as sources
 from chronicle.timeutil import parse_time, utc_iso
 
 WEB = Path(__file__).parent / "web"
@@ -44,10 +49,19 @@ async def lifespan(_app: FastAPI):
         await task
 
 
+SOURCE_SYNC_SECS = 600
+
+
 async def _jobs(stop: asyncio.Event) -> None:
+    next_sync = time.monotonic() + 20
     while not stop.is_set():
         try:
             pruned = await asyncio.to_thread(db.enforce_retention)
+            if not pruned["skipped"] and pruned.get("cutoff"):
+                await asyncio.to_thread(itemgraph.forget_range, "1970-01-01T00:00:00+00:00", pruned["cutoff"])
+            if time.monotonic() >= next_sync:
+                next_sync = time.monotonic() + SOURCE_SYNC_SECS
+                await asyncio.to_thread(sources.sync_enabled)
             if not pruned["skipped"] and (pruned["frames"] or pruned["audio"] or pruned["events"] or pruned["meetings"]):
                 await asyncio.to_thread(graph.forget, "0000", pruned["cutoff"])
         except Exception as exc:  # noqa: BLE001
@@ -123,6 +137,40 @@ class AskBody(BaseModel):
     question: str
     session_id: int | None = None
     history: list[dict] | None = None
+
+
+class FieldSuggestBody(BaseModel):
+    kind: str
+    name: str = ""
+    description: str = ""
+    session_ids: list[int] = Field(default_factory=list)
+    context_ids: list[int] = Field(default_factory=list)
+    workflow_ids: list[int] = Field(default_factory=list)
+
+
+class BrainChatBody(BaseModel):
+    id: int | None = None
+    scope: str = "brain"
+    turns: list[dict]
+
+
+class SourceBody(BaseModel):
+    enabled: bool | None = None
+    options: dict | None = None
+
+
+class DisconnectBody(BaseModel):
+    forget: bool = False
+
+
+class LegendBody(BaseModel):
+    categories: list[dict]
+
+
+class NodeOverrideBody(BaseModel):
+    id: str
+    label: str | None = None
+    category: str | None = None
 
 
 class ContextComposeBody(BaseModel):
@@ -391,6 +439,51 @@ def capture_stop():
 @app.get("/graph")
 def graph_export(session_id: int | None = None, limit: int = 160):
     return graph.export(session_id, limit)
+
+
+class ClusterNameBody(BaseModel):
+    id: str
+    name: str | None = None
+
+
+class NodeClusterBody(BaseModel):
+    id: str
+    cluster: str | None = None
+
+
+@app.get("/graph/clusters")
+def graph_clusters():
+    return clusters.overview()
+
+
+@app.post("/graph/clusters/name")
+def name_clusters():
+    return {**clusters.name_all(), **clusters.overview()}
+
+
+@app.put("/graph/clusters/name")
+def rename_cluster(body: ClusterNameBody):
+    return clusters.rename(body.id, body.name)
+
+
+@app.put("/graph/node-cluster")
+def move_node_cluster(body: NodeClusterBody):
+    return clusters.move(body.id, body.cluster)
+
+
+@app.get("/legend")
+def get_legend():
+    return legend.overview()
+
+
+@app.put("/legend")
+def put_legend(body: LegendBody):
+    return legend.save(body.categories)
+
+
+@app.put("/graph/node-override")
+def put_node_override(body: NodeOverrideBody):
+    return legend.set_override(body.id, body.label, body.category)
 
 
 @app.get("/graph/summary")
@@ -759,6 +852,7 @@ def delete_range(body: RangeBody):
     if end < start:
         raise db.ChronicleError("end_time is before start_time")
     deleted = db.delete_range(start, end)
+    deleted["items"] = itemgraph.forget_range(start, end)
     graph.forget(start, end)
     return deleted
 
@@ -872,6 +966,114 @@ def harness_export(harness_id: int, format: str = "zip"):
 @app.post("/ask")
 def ask(body: AskBody):
     return ask_mod.prepare(body.question, body.session_id, body.history)
+
+
+@app.post("/brain/ask")
+def brain_ask(body: AskBody):
+    return brain.answer(body.question, body.history)
+
+
+@app.get("/brain/chats")
+def brain_chats(scope: str = "brain"):
+    return {"data": brain.list_chats(scope)}
+
+
+@app.post("/brain/chats")
+def save_brain_chat(body: BrainChatBody):
+    return brain.save_chat(body.id, body.turns, body.scope)
+
+
+@app.get("/brain/chats/{chat_id}")
+def get_brain_chat(chat_id: int):
+    return brain.get_chat(chat_id)
+
+
+@app.delete("/brain/chats/{chat_id}")
+def delete_brain_chat(chat_id: int):
+    return brain.delete_chat(chat_id)
+
+
+@app.get("/brain/harness-ideas")
+def brain_harness_ideas():
+    return brain.harness_ideas()
+
+
+@app.post("/brain/suggest")
+def brain_suggest(body: FieldSuggestBody):
+    return brain.suggest_fields(body.kind, body.name, body.description, body.session_ids, body.context_ids, body.workflow_ids)
+
+
+# Privacy & sources
+
+
+@app.get("/sources")
+def list_sources():
+    return {"data": sources.list_sources(), "privacy": _privacy()}
+
+
+def _privacy() -> dict:
+    with db.conn() as connection:
+        items = connection.execute("SELECT COUNT(*) AS n FROM items").fetchone()["n"]
+    return {"items": items, "frames": db.counts().get("frames") or 0, "retention_days": db.get_setting("retention_days", "30"),
+            "redact": db.redact_enabled(), "home": str(db.home()), "llm": llm.status().get("enabled"), "model": llm.status().get("model")}
+
+
+@app.post("/sources/{source_id}")
+def configure_source(source_id: str, body: SourceBody):
+    return sources.configure(source_id, enabled=body.enabled, options=body.options)
+
+
+@app.post("/sources/{source_id}/sync")
+async def sync_source(source_id: str):
+    return await asyncio.to_thread(sources.run, source_id, force=True)
+
+
+@app.post("/sources/{source_id}/import")
+async def import_source(source_id: str, request: Request, filename: str = "upload"):
+    data = await request.body()
+    if not data:
+        raise db.ChronicleError("send the file as the request body")
+    if len(data) > 1024 * 1024 * 1024:
+        raise db.ChronicleError("that file is over 1 GB", 413)
+    with tempfile.NamedTemporaryFile(suffix=Path(filename).suffix or ".bin", delete=False) as handle:
+        handle.write(data)
+        path = handle.name
+    try:
+        return await asyncio.to_thread(sources.import_file, source_id, path)
+    finally:
+        Path(path).unlink(missing_ok=True)
+
+
+@app.post("/sources/{source_id}/connect")
+def connect_source(source_id: str):
+    source = sources.get(source_id)
+    if not hasattr(source, "connect"):
+        raise db.ChronicleError(f"{source.name} doesn't need signing in")
+    return source.connect()
+
+
+@app.post("/sources/{source_id}/disconnect")
+def disconnect_source(source_id: str, body: DisconnectBody | None = None):
+    result = sources.disconnect(source_id, forget=bool(body and body.forget))
+    if getattr(sources.get(source_id), "provider", None):
+        oauth.forget(source_id)
+    return result
+
+
+@app.get("/sources/{source_id}/choices")
+def source_choices(source_id: str):
+    source = sources.get(source_id)
+    return {"data": source.choices() if hasattr(source, "choices") else []}
+
+
+@app.get("/oauth/callback", response_class=HTMLResponse)
+def oauth_callback(code: str | None = None, state: str | None = None, error: str | None = None):
+    try:
+        oauth.callback(code, state, error)
+        title = "Connected"
+    except db.ChronicleError as exc:
+        title = html.escape(exc.message)
+    return f"<!doctype html><meta charset=utf-8><title>Chronicle</title><body style='background:#000;color:#fff;font-family:system-ui;display:grid;place-items:center;height:100vh'><div><h1>{title}</h1><p><a style='color:#ffd60a' href='/#sources'>Back to Chronicle</a></p></div>"
 
 
 @app.post("/ask/stream")

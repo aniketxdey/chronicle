@@ -24,6 +24,7 @@ DENY_APPS = {
 DENY_WINDOW_WORDS = ("password", "private browsing", "incognito", "inprivate")
 CLIPBOARD_LIMIT = 2000
 GRAPH_REFRESH_SECS = 30
+PROBE_REFRESH_SECS = 30
 AX_MIN_CHARS = 120
 # VS Code-family editors switch into "Screen Reader Optimized" mode when AXManualAccessibility is set.
 AX_NO_UNLOCK = {"Cursor", "Code", "Code - Insiders", "Visual Studio Code", "VSCodium", "Windsurf"}
@@ -93,6 +94,9 @@ class Recorder:
         self.clip_hash: str | None = None
         self.last_graph = 0.0
         self.last_tick = 0.0
+        self.last_text = ""
+        self.last_ax: tuple = (None, None)
+        self.last_probe = 0.0
 
     def reset(self, session_id: int | None) -> None:
         self.__init__()
@@ -161,14 +165,26 @@ class Recorder:
                 self.clip_hash = digest
         self.app, self.window, self.url = front.app, front.window, front.url
 
-        ax_text, elements = self.accessibility_text(front.app)
-        shot_dir = db.media_root() / "frames"
-        pending = shot_dir / f"pending-{os.getpid()}.jpg"
-        has_image = db.get_bool("capture_screenshots", True) and probe.screenshot(pending)
-        ocr_text = None
-        if ax_text is None and has_image and db.get_bool("capture_ocr", True):
-            ocr_text = probe.ocr(pending)
-        text = "\n".join(part for part in (front.window, front.url or "", ax_text or ocr_text or "") if part)
+        # Same window, no events: bump dwell time without walking AX or capturing the display.
+        # Re-probe every PROBE_REFRESH_SECS so scrolling or typing in the same window still lands.
+        now_mono = time.monotonic()
+        heavy = trigger != "interval" or bool(events) or not self.last_text or (now_mono - self.last_probe >= PROBE_REFRESH_SECS)
+        ax_text, elements, ocr_text, has_image = None, None, None, False
+        pending = None
+        if heavy:
+            ax_text, elements = self.accessibility_text(front.app)
+            shot_dir = db.media_root() / "frames"
+            pending = shot_dir / f"pending-{os.getpid()}.jpg"
+            has_image = db.get_bool("capture_screenshots", True) and probe.screenshot(pending)
+            if ax_text is None and has_image and db.get_bool("capture_ocr", True):
+                ocr_text = probe.ocr(pending)
+            text = "\n".join(part for part in (front.window, front.url or "", ax_text or ocr_text or "") if part)
+            self.last_text = text or front.app
+            self.last_ax = (ax_text, elements)
+            self.last_probe = now_mono
+        else:
+            ax_text, elements = self.last_ax
+            text = self.last_text
         saved = content.add_screen(
             text=text or front.app,
             app_name=front.app,
@@ -180,12 +196,12 @@ class Recorder:
             duration_secs=round(elapsed, 1),
             device_name="Main display",
             ocr_text=ocr_text,
-            elements=elements,
+            elements=elements if heavy else None,
             dedupe=True,
             session_id=sid,
         )
         frame_id = saved["frame_id"]
-        if has_image:
+        if has_image and pending is not None:
             relative = f"frames/{frame_id}.jpg"
             pending.replace(db.media_root() / relative)
             with db.conn() as connection:
@@ -195,7 +211,8 @@ class Recorder:
                               text=text_value, frame_id=frame_id, session_id=sid)
         sessions.refresh_counts(sid)
         db.set_setting("last_capture_at", utc_iso())
-        db.set_setting("last_capture_error", "")
+        blocked = db.get_bool("capture_screenshots", True) and probe.screen_capture_allowed() is False
+        db.set_setting("last_capture_error", "Screenshots are off: Screen Recording isn't granted to the app running Chronicle." if blocked else "")
         if time.monotonic() - self.last_graph > GRAPH_REFRESH_SECS:
             self.last_graph = time.monotonic()
             from chronicle import graph

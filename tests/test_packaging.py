@@ -58,3 +58,21 @@ def test_tools_have_directory_annotations():
 
 def test_the_app_and_site_share_one_logo():
     assert (ROOT / "chronicle/web/icon.svg").read_text() == (ROOT / "docs/assets/icon.svg").read_text()
+
+
+def test_every_client_logo_ships_with_the_package():
+    from chronicle import clients
+
+    logos = {item["id"]: item["logo"] for item in clients.catalog()}
+    assert set(clients.LOGOS) <= set(logos)
+    for name in filter(None, logos.values()):
+        assert (ROOT / "chronicle/web/logos" / name).is_file(), name
+    assert "web/logos/*" in (ROOT / "pyproject.toml").read_text()
+
+
+def test_the_graph_renderer_ships_with_the_package():
+    assert (ROOT / "chronicle/web/graph3d.js").is_file() and (ROOT / "chronicle/web/vendor/atom-kit.js").is_file()
+    project = (ROOT / "pyproject.toml").read_text()
+    assert "web/vendor/*" in project and "chronicle.sources" in project
+    page = (ROOT / "chronicle/web/index.html").read_text()
+    assert page.index("atom-kit.js") < page.index("graph3d.js") < page.index("app.js")

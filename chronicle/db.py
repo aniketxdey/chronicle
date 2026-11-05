@@ -122,6 +122,58 @@ CREATE TABLE IF NOT EXISTS workflows (
     last_seen TEXT
 );
 
+CREATE TABLE IF NOT EXISTS items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL,
+    category TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    ext_id TEXT NOT NULL,
+    ts TEXT NOT NULL,
+    title TEXT,
+    text TEXT,
+    url TEXT,
+    thread TEXT,
+    actors TEXT,
+    from_me INTEGER DEFAULT 0,
+    props TEXT,
+    UNIQUE (source, ext_id)
+);
+CREATE INDEX IF NOT EXISTS idx_items_source_ts ON items(source, ts);
+CREATE VIRTUAL TABLE IF NOT EXISTS items_fts USING fts5(item_id UNINDEXED, title, text);
+
+CREATE TABLE IF NOT EXISTS source_state (
+    id TEXT PRIMARY KEY,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    options TEXT,
+    cursor TEXT,
+    last_sync TEXT,
+    last_error TEXT,
+    items INTEGER DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS brain_chats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scope TEXT NOT NULL DEFAULT 'brain',
+    title TEXT NOT NULL,
+    turns TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS graph_categories (
+    id TEXT PRIMARY KEY,
+    label TEXT NOT NULL,
+    color TEXT NOT NULL,
+    kinds TEXT NOT NULL DEFAULT '[]',
+    position INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS node_overrides (
+    id TEXT PRIMARY KEY,
+    label TEXT,
+    category TEXT,
+    cluster TEXT
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
     id INTEGER PRIMARY KEY,
     label TEXT,
@@ -265,6 +317,8 @@ CREATE INDEX IF NOT EXISTS idx_kg_llm_patches_scope ON kg_llm_patches(scope, id)
 """
 
 MIGRATIONS = [
+    ("node_overrides", "cluster", "TEXT"),
+    ("brain_chats", "scope", "TEXT NOT NULL DEFAULT 'brain'"),
     ("workflows", "source", "TEXT"),
     ("workflows", "spec", "TEXT"),
     ("workflows", "graph", "TEXT"),

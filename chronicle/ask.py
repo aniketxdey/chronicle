@@ -30,6 +30,11 @@ Answer only from it, and say so plainly when it doesn't show the answer. A scree
 Be brief and specific: lead with the answer, keep names, files, and URLs exact, use short bullets for lists, and cite the frames you relied on as (frame N)."""
 
 
+def frame_citations(answer: str) -> list[dict]:
+    frames = list(dict.fromkeys(int(item) for item in re.findall(r"\bframes? (\d+)(?![\d–-])", answer)))[:8]
+    return [{"type": "frame", "id": frame, "frame_id": frame, "label": f"Frame {frame}"} for frame in frames]
+
+
 def prepare(question: str, session_id: int | None = None, history: list[dict] | None = None) -> dict:
     from chronicle import contexts, llm, tuner
 
@@ -54,8 +59,7 @@ def prepare(question: str, session_id: int | None = None, history: list[dict] | 
         except Exception as exc:  # noqa: BLE001
             db.set_setting("last_llm_error", f"ask: {getattr(exc, 'message', None) or exc}")
         if mode == "model":
-            frames = list(dict.fromkeys(int(item) for item in re.findall(r"\bframes? (\d+)(?![\d–-])", answer)))[:8]
-            citations = [{"type": "frame", "id": frame, "frame_id": frame, "label": f"Frame {frame}"} for frame in frames]
+            citations = frame_citations(answer)
     return {"question": cleaned, "answer": answer, "chunks": _chunks(answer), "citations": citations, "mode": mode}
 
 

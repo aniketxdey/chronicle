@@ -198,10 +198,37 @@ def clipboard() -> str | None:
     return done.stdout
 
 
+_screen_access: tuple[float, bool | None] = (0.0, None)
+
+
+def screen_capture_allowed() -> bool | None:
+    """Whether this process may capture the screen. None off macOS. Does not prompt."""
+    global _screen_access
+    if sys.platform != "darwin":
+        return None
+    checked, value = _screen_access
+    if checked and time.monotonic() - checked < 15:
+        return value
+    value = None
+    try:
+        import ctypes
+
+        cg = ctypes.CDLL("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
+        cg.CGPreflightScreenCaptureAccess.restype = ctypes.c_bool
+        value = bool(cg.CGPreflightScreenCaptureAccess())
+    except (OSError, AttributeError):
+        value = None
+    _screen_access = (time.monotonic(), value)
+    return value
+
+
 def screenshot(target: Path, max_width: int = 1600) -> bool:
     """Write a JPEG of the main display to target. Returns False when no tool is available."""
     target.parent.mkdir(parents=True, exist_ok=True)
     if sys.platform == "darwin":
+        # Without access, screencapture saves only the wallpaper and makes macOS show its permission dialog.
+        if screen_capture_allowed() is False:
+            return False
         done = _run(["screencapture", "-x", "-m", "-t", "jpg", str(target)], timeout=8)
         if done is None or done.returncode != 0 or not target.exists():
             return False
@@ -411,6 +438,7 @@ def capabilities() -> dict:
         or (linux and any(shutil.which(tool) for tool in ("grim", "gnome-screenshot", "scrot", "import"))),
         "clipboard": mac or sys.platform == "win32" or (linux and bool(shutil.which("wl-paste") or shutil.which("xclip"))),
         "idle": mac or sys.platform == "win32" or (linux and bool(shutil.which("xprintidle"))),
+        "screen_recording": screen_capture_allowed(),
         "ocr": bool(shutil.which("tesseract")),
         "accessibility": bool(ax_trusted()),
         "ax_helper": None if helper is None else helper[1]["helper"],

@@ -15,6 +15,7 @@ from chronicle import db, graph, search, sessions
 from chronicle.timeutil import format_duration, utc_iso
 
 SNIPPET = 280
+EVIDENCE_SNIPPET = 500
 
 
 def _local(stamp: str | None) -> str:
@@ -125,19 +126,9 @@ def build(
 
     evidence: list[dict] = []
     if task and max_evidence:
-        found = search.query(q=task, limit=max_evidence, start_time=start if session_id else None,
-                             end_time=end if session_id else None)
-        for item in found["data"]:
-            body = item["content"]
-            evidence.append({
-                "type": item["type"].lower(),
-                "timestamp": body.get("timestamp"),
-                "frame_id": body.get("frame_id"),
-                "app": body.get("app_name") or body.get("speaker_name"),
-                "window": body.get("window_name"),
-                "url": body.get("browser_url"),
-                "text": _clip(body.get("text")),
-            })
+        for item in search.relevant(task, limit=max_evidence, start_time=start if session_id else None,
+                                    end_time=end if session_id else None):
+            evidence.append({**item, "text": _clip(item["text"], EVIDENCE_SNIPPET)})
 
     now = None
     if latest is not None:

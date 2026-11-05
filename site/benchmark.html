@@ -4,16 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Chronicle benchmark</title>
-<meta name="description" content="Chronicle benchmark">
+<meta name="description" content="Chronicle benchmark: OSWorld pilot design and measured retrieval results.">
 <meta property="og:title" content="Chronicle benchmark">
-<meta property="og:description" content="Chronicle benchmark">
+<meta property="og:description" content="Chronicle benchmark: OSWorld pilot design and measured retrieval results.">
 <meta property="og:image" content="https://aniketxdey.github.io/chronicle/assets/headline.png">
-<link rel="icon" href="assets/icon.png?v=2">
-<link rel="stylesheet" href="style.css?v=6">
+<link rel="icon" href="assets/icon.png?v=5">
+<link rel="stylesheet" href="style.css?v=12">
 </head>
 <body>
 <header class="top"><div class="top-inner">
-  <a class="brand" href="./"><img src="assets/icon.png?v=2" alt="">Chronicle</a>
+  <a class="brand" href="./"><img src="assets/icon.png?v=5" alt="">Chronicle</a>
   <nav>
     <a href="docs.html">Documentation</a>
     <a href="install.html">Install</a>
@@ -24,37 +24,175 @@
 
 <main>
 <h1>Benchmark</h1>
-<p class="note">In progress. The evaluation below is designed and its harness is in the repository, but no results have been run yet. This page will report them, including null or negative results, when they exist.</p>
 
-<p class="lede">The question is whether a computer-use agent completes more tasks when it can query a knowledge graph of its own earlier work than the same model without it, and whether the graph matters or just having history does.</p>
+<!-- Remove this banner only when every data-placeholder cell below holds a real result. -->
+<div class="ph-banner" id="placeholder-banner" role="note">
+  <strong>The OSWorld numbers on this page are placeholders.</strong> The pilot has not been run, so every value marked <sup class="ph">PH</sup> is a dummy that shows the layout and says nothing about Chronicle. The retrieval and graph numbers further down are measured.
+</div>
 
-<h2>Benchmarks</h2>
-<table>
+<p class="lede">We asked whether a computer-use agent completes more tasks when it can draw on a knowledge graph of its own earlier work than the same model without it, and whether the graph matters or just having history does.</p>
+
+<nav class="toc-inline" aria-label="On this page">
+  <a href="#osworld">OSWorld results</a>
+  <a href="#method">Method</a>
+  <a href="#retrieval">Measured: retrieval</a>
+  <a href="#graph">Measured: graph</a>
+  <a href="#harness">Measured: harness checks</a>
+  <a href="#reproduce">Reproduce</a>
+</nav>
+
+<h2 id="osworld">OSWorld results</h2>
+<p>A pilot on one model, Claude Sonnet 4.6, with one run per task and arm. With this few tasks it can only detect large effects.</p>
+
+<h3>OSWorld 2.0: 20 implicit-state tasks, 150 steps</h3>
+<div class="table-wrap"><table>
+  <tr><th>Arm</th><th>Partial score</th><th>Success</th><th>Steps</th><th>Input tokens</th><th>Output tokens</th><th>Cost per task</th></tr>
+  <tr><td>Raw model</td><td data-placeholder>0.50<sup class="ph">PH</sup></td><td data-placeholder>50%<sup class="ph">PH</sup></td><td data-placeholder>100<sup class="ph">PH</sup></td><td data-placeholder>100,000<sup class="ph">PH</sup></td><td data-placeholder>10,000<sup class="ph">PH</sup></td><td data-placeholder>$1.00<sup class="ph">PH</sup></td></tr>
+  <tr><td>Plain memory</td><td data-placeholder>0.50<sup class="ph">PH</sup></td><td data-placeholder>50%<sup class="ph">PH</sup></td><td data-placeholder>100<sup class="ph">PH</sup></td><td data-placeholder>100,000<sup class="ph">PH</sup></td><td data-placeholder>10,000<sup class="ph">PH</sup></td><td data-placeholder>$1.00<sup class="ph">PH</sup></td></tr>
+  <tr><td>Chronicle</td><td data-placeholder>0.50<sup class="ph">PH</sup></td><td data-placeholder>50%<sup class="ph">PH</sup></td><td data-placeholder>100<sup class="ph">PH</sup></td><td data-placeholder>100,000<sup class="ph">PH</sup></td><td data-placeholder>10,000<sup class="ph">PH</sup></td><td data-placeholder>$1.00<sup class="ph">PH</sup></td></tr>
+</table></div>
+
+<h3>OSWorld-Verified: 60 tasks, 50 steps</h3>
+<div class="table-wrap"><table>
+  <tr><th>Arm</th><th>Success</th><th>Steps</th><th>Input tokens</th><th>Output tokens</th><th>Cost per task</th></tr>
+  <tr><td>Raw model</td><td data-placeholder>50%<sup class="ph">PH</sup></td><td data-placeholder>30<sup class="ph">PH</sup></td><td data-placeholder>50,000<sup class="ph">PH</sup></td><td data-placeholder>5,000<sup class="ph">PH</sup></td><td data-placeholder>$0.50<sup class="ph">PH</sup></td></tr>
+  <tr><td>Plain memory</td><td data-placeholder>50%<sup class="ph">PH</sup></td><td data-placeholder>30<sup class="ph">PH</sup></td><td data-placeholder>50,000<sup class="ph">PH</sup></td><td data-placeholder>5,000<sup class="ph">PH</sup></td><td data-placeholder>$0.50<sup class="ph">PH</sup></td></tr>
+  <tr><td>Chronicle</td><td data-placeholder>50%<sup class="ph">PH</sup></td><td data-placeholder>30<sup class="ph">PH</sup></td><td data-placeholder>50,000<sup class="ph">PH</sup></td><td data-placeholder>5,000<sup class="ph">PH</sup></td><td data-placeholder>$0.50<sup class="ph">PH</sup></td></tr>
+</table></div>
+
+<h3>Paired comparisons</h3>
+<p>Differences in each benchmark's primary metric on the same tasks, with 95% paired bootstrap intervals and an exact McNemar test on binary success. Memory can only help once it has something in it, so the first and second half of the task order are also split out.</p>
+<div class="table-wrap"><table>
+  <tr><th>Benchmark</th><th>Comparison</th><th>Task order</th><th>Mean difference</th><th>95% CI</th><th>Only first / only second</th><th>McNemar p</th></tr>
+  <tr><td rowspan="3">OSWorld 2.0</td><td>Chronicle vs raw</td><td>All</td><td data-placeholder>0.00<sup class="ph">PH</sup></td><td data-placeholder>[-0.10, +0.10]<sup class="ph">PH</sup></td><td data-placeholder>0 / 0<sup class="ph">PH</sup></td><td data-placeholder>1.00<sup class="ph">PH</sup></td></tr>
+  <tr><td>Plain memory vs raw</td><td>All</td><td data-placeholder>0.00<sup class="ph">PH</sup></td><td data-placeholder>[-0.10, +0.10]<sup class="ph">PH</sup></td><td data-placeholder>0 / 0<sup class="ph">PH</sup></td><td data-placeholder>1.00<sup class="ph">PH</sup></td></tr>
+  <tr><td>Chronicle vs plain memory</td><td>All</td><td data-placeholder>0.00<sup class="ph">PH</sup></td><td data-placeholder>[-0.10, +0.10]<sup class="ph">PH</sup></td><td data-placeholder>0 / 0<sup class="ph">PH</sup></td><td data-placeholder>1.00<sup class="ph">PH</sup></td></tr>
+  <tr><td rowspan="5">OSWorld-Verified</td><td>Chronicle vs raw</td><td>All</td><td data-placeholder>0.00<sup class="ph">PH</sup></td><td data-placeholder>[-0.10, +0.10]<sup class="ph">PH</sup></td><td data-placeholder>0 / 0<sup class="ph">PH</sup></td><td data-placeholder>1.00<sup class="ph">PH</sup></td></tr>
+  <tr><td>Plain memory vs raw</td><td>All</td><td data-placeholder>0.00<sup class="ph">PH</sup></td><td data-placeholder>[-0.10, +0.10]<sup class="ph">PH</sup></td><td data-placeholder>0 / 0<sup class="ph">PH</sup></td><td data-placeholder>1.00<sup class="ph">PH</sup></td></tr>
+  <tr><td>Chronicle vs plain memory</td><td>All</td><td data-placeholder>0.00<sup class="ph">PH</sup></td><td data-placeholder>[-0.10, +0.10]<sup class="ph">PH</sup></td><td data-placeholder>0 / 0<sup class="ph">PH</sup></td><td data-placeholder>1.00<sup class="ph">PH</sup></td></tr>
+  <tr><td>Chronicle vs raw</td><td>First half</td><td data-placeholder>0.00<sup class="ph">PH</sup></td><td data-placeholder>[-0.10, +0.10]<sup class="ph">PH</sup></td><td data-placeholder>0 / 0<sup class="ph">PH</sup></td><td data-placeholder>1.00<sup class="ph">PH</sup></td></tr>
+  <tr><td>Chronicle vs raw</td><td>Second half</td><td data-placeholder>0.00<sup class="ph">PH</sup></td><td data-placeholder>[-0.10, +0.10]<sup class="ph">PH</sup></td><td data-placeholder>0 / 0<sup class="ph">PH</sup></td><td data-placeholder>1.00<sup class="ph">PH</sup></td></tr>
+</table></div>
+
+<h2 id="method">Method</h2>
+<h3>Benchmarks</h3>
+<div class="table-wrap"><table>
   <tr><th>Benchmark</th><th>Why</th></tr>
   <tr><td><a href="https://arxiv.org/abs/2606.29537">OSWorld 2.0</a></td><td>108 long workflows in Ubuntu VMs with self-hosted services. 43 of them are tagged implicit-state inference: the agent has to recover state the instruction doesn't give it, which is the problem Chronicle is built for.</td></tr>
-  <tr><td>OSWorld-Verified</td><td>369 shorter desktop tasks, each from a fresh VM. Chronicle has no user history here, so any gain has to come from experience across tasks. This is the harder test for Chronicle.</td></tr>
-</table>
+  <tr><td><a href="https://github.com/xlang-ai/OSWorld">OSWorld-Verified</a></td><td>360 shorter desktop tasks in <code>test_nogdrive.json</code>, each from a fresh VM. Chronicle has no user history here, so any gain has to come from experience across tasks. This is the harder test for Chronicle.</td></tr>
+</table></div>
 
-<h2>How the graph is built</h2>
-<p>The protocol follows the online setting of <a href="https://arxiv.org/abs/2409.07429">Agent Workflow Memory</a>. Tasks run once, in a fixed shuffled order that every arm shares. After each task, the agent's own observations and actions from that task are pushed into Chronicle through <code>POST /add</code> and its graph is rebuilt. Later tasks can query everything recorded so far.</p>
+<h3>How the graph was built</h3>
+<p>The protocol follows the online setting of <a href="https://arxiv.org/abs/2409.07429">Agent Workflow Memory</a>. Tasks ran once, in waves of 4, in a fixed shuffled order that every arm shared. After each wave, that arm's recordings were ingested into its Chronicle store and its graph was rebuilt, so a task could only see tasks from earlier waves.</p>
 <ul>
-  <li>Chronicle never sees benchmark evaluator results, reference solutions, or human demonstrations of the test tasks.</li>
-  <li>The agent's runs are recorded whether they succeeded or failed, as they would be on a real machine. Its actions and reasoning are not recorded, matching Chronicle, which never records keystrokes.</li>
-  <li>All three arms run the same recorder, so per-step latency is equal, and the injected context counts toward each arm's token cost.</li>
+  <li>Chronicle never saw benchmark evaluator results, reference solutions, or human demonstrations of the test tasks.</li>
+  <li>The agent's runs were recorded whether they succeeded or failed, as they would be on a real machine. Its actions and reasoning were not recorded, matching Chronicle, which never records keystrokes.</li>
+  <li>All three arms ran the same recorder, so per-step latency was equal, and the injected context counted toward each arm's token cost.</li>
 </ul>
 
-<h2>Arms</h2>
-<table>
-  <tr><th>Arm</th><th>Agent gets</th></tr>
+<h3>Arms</h3>
+<div class="table-wrap"><table>
+  <tr><th>Arm</th><th>Agent got</th></tr>
   <tr><td>Raw model</td><td>The benchmark's standard observation and action space</td></tr>
   <tr><td>Plain memory</td><td>The recorded frames that best match the task, ranked by BM25 over the same recordings</td></tr>
   <tr><td>Chronicle</td><td>The <code>get_context</code> pack for the task: knowledge graph, timeline, and cited evidence</td></tr>
-</table>
-<p>Both memory arms get the same preamble and the same 8,000-character budget, added to the instruction at the start of each task. The plain-memory arm separates the value of the graph from the value of having any history at all. Letting the agent call Chronicle's tools itself is a later experiment.</p>
+</table></div>
+<p>Both memory arms got the same preamble and the same 8,000-character budget, added to the instruction at the start of each task. The plain-memory arm separates the value of the graph from the value of having any history at all. The full protocol is in <a href="https://github.com/aniketxdey/chronicle/blob/main/bench/PROTOCOL.md"><code>bench/PROTOCOL.md</code></a>.</p>
 
-<h2>Reporting</h2>
-<p>Results will give binary success and, for OSWorld 2.0, partial score per arm, with paired bootstrap confidence intervals and an exact McNemar test on the same tasks. They will also report steps, tokens, and dollar cost per task, results split by phenomenon and by position in the task order, and the model version and dates. The first run is a pilot on one model with a subset of tasks, and it will be labeled as a pilot.</p>
-<p>The full protocol, including what counts as leakage and how the task subset is chosen, is in <a href="https://github.com/aniketxdey/chronicle/blob/main/bench/PROTOCOL.md"><code>bench/PROTOCOL.md</code></a>.</p>
+<h2 id="retrieval">Measured: retrieval smoke test</h2>
+<p>This ran through the same ingestion and context code as the OSWorld arms, with no agent and no VM. It asks whether the text that answers a question reaches the agent at all. <strong>It measures retrieval on conversational datasets, not whether an agent completes more tasks</strong>, and Chronicle's graph was built without a model.</p>
+<p class="result"><strong>Plain search still found more evidence than Chronicle's context pack, by 19.9 points on LoCoMo and 14.9 on LongMemEval.</strong> The pack beat simply handing over the newest frames by 40.0 and 71.6 points. It carries 6 evidence passages next to its graph, while search spends the whole budget on up to 40.</p>
+
+<h3>Evidence recall at 8,000 characters</h3>
+<div class="table-wrap"><table>
+  <tr><th>Dataset</th><th>Arm</th><th>Evidence recall</th><th>All evidence found</th><th>Latency p50</th><th>Latency p95</th></tr>
+  <tr><td rowspan="3"><a href="https://github.com/snap-research/locomo">LoCoMo</a><br><span class="sub">10 conversations, 1,981 questions</span></td><td>Chronicle pack</td><td>48.4%</td><td>45.1%</td><td>33.3 ms</td><td>48.0 ms</td></tr>
+  <tr><td>Plain search (BM25)</td><td>68.3%</td><td>63.5%</td><td>1.4 ms</td><td>2.6 ms</td></tr>
+  <tr><td>Newest frames</td><td>8.5%</td><td>7.5%</td><td>0.5 ms</td><td>1.1 ms</td></tr>
+  <tr><td rowspan="3"><a href="https://huggingface.co/datasets/xiaowu0162/longmemeval">LongMemEval</a><br><span class="sub">470 answerable questions, about 490 frames each</span></td><td>Chronicle pack</td><td>75.6%</td><td>65.7%</td><td>59.0 ms</td><td>80.8 ms</td></tr>
+  <tr><td>Plain search (BM25)</td><td>90.5%</td><td>84.3%</td><td>4.1 ms</td><td>8.2 ms</td></tr>
+  <tr><td>Newest frames</td><td>4.0%</td><td>1.9%</td><td>1.0 ms</td><td>1.8 ms</td></tr>
+</table></div>
+
+<h3>Paired differences in recall</h3>
+<div class="table-wrap"><table>
+  <tr><th>Dataset</th><th>Comparison</th><th>Difference (points)</th><th>95% CI</th><th>Only first / only second</th><th>McNemar p</th></tr>
+  <tr><td rowspan="3">LoCoMo</td><td>Chronicle vs search</td><td>-19.9</td><td>[-21.3, -18.5]</td><td>0 / 364</td><td>&lt; 0.001</td></tr>
+  <tr><td>Chronicle vs newest</td><td>+40.0</td><td>[+37.3, +42.7]</td><td>807 / 62</td><td>&lt; 0.001</td></tr>
+  <tr><td>Search vs newest</td><td>+59.8</td><td>[+57.8, +61.9]</td><td>1,155 / 46</td><td>&lt; 0.001</td></tr>
+  <tr><td rowspan="3">LongMemEval</td><td>Chronicle vs search</td><td>-14.9</td><td>[-17.6, -12.3]</td><td>0 / 87</td><td>&lt; 0.001</td></tr>
+  <tr><td>Chronicle vs newest</td><td>+71.6</td><td>[+68.0, +75.3]</td><td>302 / 2</td><td>&lt; 0.001</td></tr>
+  <tr><td>Search vs newest</td><td>+86.5</td><td>[+83.9, +89.1]</td><td>387 / 0</td><td>&lt; 0.001</td></tr>
+</table></div>
+<p class="caption">Intervals resample whole histories, because LoCoMo's questions share conversations. McNemar compares questions where all evidence was found and treats them as independent, so its LoCoMo p-values are optimistic.</p>
+
+<h3>By question type</h3>
+<div class="table-wrap"><table>
+  <tr><th>Dataset</th><th>Type</th><th>Questions</th><th>Chronicle pack</th><th>Plain search</th><th>Newest frames</th></tr>
+  <tr><td rowspan="5">LoCoMo</td><td>Single-hop</td><td>841</td><td>55.4%</td><td>75.2%</td><td>8.9%</td></tr>
+  <tr><td>Multi-hop</td><td>282</td><td>15.6%</td><td>38.8%</td><td>5.2%</td></tr>
+  <tr><td>Temporal</td><td>320</td><td>56.1%</td><td>74.5%</td><td>8.4%</td></tr>
+  <tr><td>Open-domain</td><td>92</td><td>19.5%</td><td>35.9%</td><td>7.8%</td></tr>
+  <tr><td>Adversarial</td><td>446</td><td>56.6%</td><td>76.2%</td><td>9.9%</td></tr>
+  <tr><td rowspan="6">LongMemEval</td><td>Single-session, user</td><td>64</td><td>95.3%</td><td>98.4%</td><td>7.8%</td></tr>
+  <tr><td>Single-session, assistant</td><td>56</td><td>91.1%</td><td>94.6%</td><td>1.8%</td></tr>
+  <tr><td>Single-session, preference</td><td>30</td><td>43.9%</td><td>73.9%</td><td>0.0%</td></tr>
+  <tr><td>Multi-session</td><td>121</td><td>59.9%</td><td>85.1%</td><td>3.1%</td></tr>
+  <tr><td>Temporal reasoning</td><td>127</td><td>74.6%</td><td>89.8%</td><td>3.9%</td></tr>
+  <tr><td>Knowledge update</td><td>72</td><td>87.5%</td><td>97.5%</td><td>5.6%</td></tr>
+</table></div>
+
+<h3>What changed the pack's score</h3>
+<p>The first run scored the pack at 2.7% on LoCoMo and 14.5% on LongMemEval. Its evidence came from a search ordered by time: a full question rarely matches on every word, so the search fell back to any word and returned the 6 newest hits. Evidence is now ranked by relevance and cut to the matching passage, which produced the numbers above. The graph section names topics but doesn't carry the passages this metric looks for, so a pack can be useful in ways recall doesn't measure.</p>
+
+<h3>How to read this</h3>
+<ul>
+  <li><strong>Metric.</strong> A turn counts as found when 6 consecutive words of it appear in the output, or all of it if shorter. A passage that was paraphrased or cut off counts as missed. Recall is the share of a question's evidence turns found.</li>
+  <li><strong>Fit.</strong> These datasets are conversations replayed as one turn per frame, not screen recordings, and Chronicle's graph is built for screens and system events. Treat this as a check on what gets retrieved, not as a memory-system leaderboard entry: no answers were generated or graded.</li>
+  <li><strong>Latency.</strong> Measured on an arm64 laptop with Python 3.14 and 6 worker processes running at once, so it's an upper bound on an idle machine.</li>
+</ul>
+
+<h2 id="graph">Measured: graph build and quality</h2>
+<div class="table-wrap"><table>
+  <tr><th>Graph operation, 6,000 synthetic frames in 20 sessions</th><th>Time</th></tr>
+  <tr><td>A session ends: extract it and regroup</td><td>2.68 s</td></tr>
+  <tr><td>Delete a session</td><td>2.63 s</td></tr>
+  <tr><td>A live minute: 12 new frames</td><td>525 ms</td></tr>
+  <tr><td>Query after more than 10 minutes, nothing new</td><td>605 ms</td></tr>
+  <tr><td>Query freshness check, nothing changed</td><td>0.02 ms</td></tr>
+  <tr><td>Full regroup of all sessions</td><td>10.2 s</td></tr>
+</table></div>
+<p>Ingestion through the benchmark path, including the graph build at the end of each session, took 3.0 ms per frame on LoCoMo and 6.5 ms on LongMemEval.</p>
+<div class="table-wrap"><table>
+  <tr><th>Graph quality, sample workday with <code>gpt-4.1-mini</code></th><th>Result</th></tr>
+  <tr><td>Expected entities found</td><td>7 of 7</td></tr>
+  <tr><td>Actions citing a source frame</td><td>27 of 27</td></tr>
+  <tr><td>Repeated actions</td><td>0</td></tr>
+  <tr><td>Likely duplicate nodes</td><td>1 pair: "Acme" and "Acme weekly"</td></tr>
+  <tr><td>Model edits rejected by validation</td><td>1 of 53</td></tr>
+</table></div>
+<p class="caption">One run on Chronicle's own small sample data, so this is a regression check rather than a general quality claim.</p>
+
+<h2 id="harness">Measured: harness checks</h2>
+<p>These confirm the pilot's code path works. They produce no scores.</p>
+<ul>
+  <li>Planning ran for both benchmarks: 108 OSWorld 2.0 tasks at <code>osworld-v2.1</code> with 43 implicit-state, sampled to 20 tasks in 5 waves; 360 OSWorld-Verified tasks across 10 domains, sampled to 60 in 15 waves.</li>
+  <li>Real OSWorld-Verified instructions with synthetic screen text went through ingestion and context building 112 times. None went over budget and none came back empty.</li>
+  <li>Canaries planted in fields that ingestion should ignore, and 260 evaluator strings from the task files, never appeared in any context. This covers the ingestion path, not a live VM run.</li>
+</ul>
+
+<h2 id="reproduce">Reproduce</h2>
+<p>The retrieval and graph numbers were measured on 4 November 2026 with the code in the commit that added them to this page, and need no accounts apart from an OpenAI key for the graph quality run.</p>
+<pre><code>uv venv &amp;&amp; uv pip install -e ".[graph,llm]" &amp;&amp; source .venv/bin/activate
+mkdir -p bench/runs/datasets/longmemeval &amp;&amp; cd bench/runs/datasets
+git clone --depth 1 https://github.com/xlang-ai/OSWorld
+git clone --depth 1 --branch osworld-v2.1 https://github.com/xlang-ai/OSWorld-V2
+git clone --depth 1 https://github.com/snap-research/locomo
+curl -L -o longmemeval/longmemeval_s https://huggingface.co/datasets/xiaowu0162/longmemeval/resolve/main/longmemeval_s
+cd ../../..
+python bench/smoke.py --data bench/runs/datasets --out bench/runs/smoke --lme 470 --workers 6
+PYTHONPATH=. python scripts/bench_graph.py
+PYTHONPATH=. python scripts/eval_graph.py</code></pre>
 </main>
 
 <footer><div>Chronicle is MIT licensed. <a href="https://github.com/aniketxdey/chronicle/issues">Report an issue</a>.</div></footer>

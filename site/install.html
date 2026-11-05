@@ -8,12 +8,12 @@
 <meta property="og:title" content="Install Chronicle">
 <meta property="og:description" content="Install Chronicle with uv and open the app.">
 <meta property="og:image" content="https://aniketxdey.github.io/chronicle/assets/headline.png">
-<link rel="icon" href="assets/icon.png?v=2">
-<link rel="stylesheet" href="style.css?v=6">
+<link rel="icon" href="assets/icon.png?v=5">
+<link rel="stylesheet" href="style.css?v=12">
 </head>
 <body>
 <header class="top"><div class="top-inner">
-  <a class="brand" href="./"><img src="assets/icon.png?v=2" alt="">Chronicle</a>
+  <a class="brand" href="./"><img src="assets/icon.png?v=5" alt="">Chronicle</a>
   <nav>
     <a href="docs.html">Documentation</a>
     <a class="on" href="install.html">Install</a>
@@ -28,10 +28,10 @@
   <button type="button" data-set="mac">macOS</button><button type="button" data-set="linux">Linux</button><button type="button" data-set="win">Windows</button>
 </div>
 <pre data-os="mac linux"><code>curl -LsSf https://astral.sh/uv/install.sh | sh
-uv tool install "chronicle-context[graph]"
+uv tool install --python 3.12 "chronicle-context[graph]"
 chronicle serve</code></pre>
 <pre data-os="win"><code>powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-uv tool install "chronicle-context[graph]"
+uv tool install --python 3.12 "chronicle-context[graph]"
 chronicle serve</code></pre>
 <p>Open <code>http://127.0.0.1:3030</code>. Chronicle needs Python 3.10 or newer.</p>
 

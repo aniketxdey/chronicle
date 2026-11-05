@@ -21,7 +21,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
-from chronicle import db, keyphrases, merge, tasks as task_seg
+from chronicle import legend, db, keyphrases, merge, tasks as task_seg
 from chronicle.timeutil import utc_iso
 
 EVIDENCE_CAP = 8
@@ -1099,6 +1099,7 @@ def llm_view(connection, scope: str, top: int = 8) -> dict:
     }
 
 
+@legend.decorated
 def summary(session_id: int | None = None, top: int = 8) -> dict:
     ensure(session_id)
     scope = scope_for(session_id)
@@ -1161,6 +1162,7 @@ def _transition_label(label: str, props: str | None) -> str:
     return f"{app} · {label}" if app else label
 
 
+@legend.decorated
 def tasks(session_id: int | None = None, since: str | None = None, limit: int = 200) -> list[dict]:
     """Tasks in time order, each with its topic cluster and the entities it involved."""
     ensure(session_id)
@@ -1202,6 +1204,7 @@ def tasks(session_id: int | None = None, since: str | None = None, limit: int = 
     return out[-max(1, min(limit, 1000)):]
 
 
+@legend.decorated
 def find(q: str | None = None, kind: str | None = None, limit: int = 20, session_id: int | None = None) -> list[dict]:
     ensure(session_id)
     scope = scope_for(session_id)
@@ -1262,6 +1265,7 @@ def _node_detail(connection, public: dict) -> dict:
     return {"actions": actions, "frames": [dict(row) for row in frames], "events": [dict(row) for row in events]}
 
 
+@legend.decorated
 def node(node_id: str, session_id: int | None = None, limit: int = 25) -> dict:
     ensure(session_id)
     scope = scope_for(session_id)
@@ -1315,6 +1319,7 @@ def node(node_id: str, session_id: int | None = None, limit: int = 25) -> dict:
     }
 
 
+@legend.decorated
 def subgraph(task: str | None, session_id: int | None = None, max_nodes: int = 30) -> dict:
     """Nodes relevant to a task plus their strongest neighbors. Without a task, the heaviest nodes."""
     ensure(session_id)
@@ -1421,6 +1426,7 @@ def merged(session_ids: list[int], limit: int = 300) -> dict:
     return {"nodes": ranked, "edges": [edge for edge in edges.values() if edge["src"] in ids and edge["dst"] in ids]}
 
 
+@legend.decorated
 def export(session_id: int | None = None, limit: int = 160) -> dict:
     ensure(session_id)
     scope = scope_for(session_id)

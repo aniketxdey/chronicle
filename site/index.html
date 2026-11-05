@@ -8,12 +8,12 @@
 <meta property="og:title" content="Chronicle: agent harnesses built from your own work">
 <meta property="og:description" content="Chronicle records your screen and system events on your machine, writes context files and workflows from them, and builds them into agent harnesses that plug into any AI.">
 <meta property="og:image" content="https://aniketxdey.github.io/chronicle/assets/headline.png">
-<link rel="icon" href="assets/icon.png?v=2">
-<link rel="stylesheet" href="style.css?v=6">
+<link rel="icon" href="assets/icon.png?v=5">
+<link rel="stylesheet" href="style.css?v=12">
 </head>
 <body class="home">
 <header class="top"><div class="top-inner">
-  <a class="brand" href="./"><img src="assets/icon.png?v=2" alt="">Chronicle</a>
+  <a class="brand" href="./"><img src="assets/icon.png?v=5" alt="">Chronicle</a>
   <nav>
     <a href="docs.html">Documentation</a>
     <a href="install.html">Install</a>
@@ -24,41 +24,38 @@
 
 <main>
 <section class="hero">
-  <h1>Agent harnesses built from your own work</h1>
-  <p class="lede">Chronicle watches how you actually work, on your own machine, and turns it into instructions your agents can follow. Record a session, get context files and workflows written from it, and combine them into a harness that plugs into Claude, ChatGPT, Cursor, or any other AI.</p>
+  <h1>Harnesses for every AI, built from how <em>you</em> work</h1>
+  <div class="hero-note">
+    <p>Models have gotten exponentially <a href="https://x.com/polynoamial/status/2097375837670785447">better</a> in the last few years, but they still come <strong>plain</strong> out-of-the-box. In other words, models are great, but they don't know <em>you</em>.</p>
+    <p>We personally got tired of explaining our life stories in every prompt, so we built <strong class="hl">Chronicle</strong>: a desktop companion that watches how you actually work and turns what it learns into custom harnesses for any task, with integrations into every LLM provider.</p>
+    <p>As personal agents become more commercialized <a href="https://decrypt.co/375001/muse-code-meta-ai-coding-agent-claude-code-and-codex">every day</a>, we wanted to build something that bridges the gap between their, simply put, dumb pretrained corpuses and the ontology of how you work. The philosophy behind Chronicle is thus simple: an on-device context engineer for every AI you interact with. Record a session, get context files and workflows written from it, and combine them into a constantly evolving knowledge base that supports your own.</p>
+    <p>Download today.</p>
+  </div>
   <div class="cta">
     <a class="btn primary" href="install.html">Install</a>
-    <a class="btn" href="docs.html">Read the documentation</a>
+    <a class="btn" href="docs.html">Documentation</a>
   </div>
-  <figure class="demo"><img src="assets/gifs/harness.gif?v=2" alt="Designing a new harness in Chronicle: naming it, choosing recordings, contexts, and workflows, then opening it in the editor" loading="lazy"></figure>
+  <figure class="demo"><img src="assets/gifs/harness.gif?v=5" alt="Designing a new harness in Chronicle: naming it, choosing AI tools, recordings, contexts, and workflows, then opening it in the editor" loading="lazy"></figure>
 </section>
 
-<h2>How it fits together</h2>
-<ol class="flow-line">
-  <li><span class="n">1</span><strong>Record</strong><p>Your screen and system events, for as long as you choose.</p></li>
-  <li><span class="n">2</span><strong>Generate</strong><p>A model writes context files and workflows from each recording.</p></li>
-  <li><span class="n">3</span><strong>Build a harness</strong><p>Combine them with a knowledge graph of your recordings.</p></li>
-  <li><span class="n">4</span><strong>Plug it in</strong><p>Agents read it over MCP, or you upload it as files.</p></li>
-</ol>
-
-<h2>What's in a harness</h2>
-<p>A harness is general, covering a whole line of work like recruiting. Inside it, each part gets more specific.</p>
+<h2>Chronicle's Ontology</h2>
+<p>Most harnesses are built for agents to know systems, not you. Chronicle instead builds harnesses directly on distinct artifacts it generates from its private, on-device sessions.</p>
 <div class="grid three">
-  <div class="card c-ctx"><span class="path">contexts/</span><h3>Context files</h3><p>Guidance for one kind of session, like an agent file. <em>Researching job companies.</em> You can also use one alone for a small session.</p></div>
-  <div class="card c-flow"><span class="path">workflows/</span><h3>Workflows</h3><p>Short procedures for one specific job, like a skill. <em>Customizing resume bullets to keep their formatting and length.</em></p></div>
-  <div class="card c-graph"><span class="path">graph/</span><h3>Knowledge graph engine</h3><p>Merged from the recordings you choose, down to the system events, so agents can look up what actually happened.</p></div>
+  <div class="card c-ctx"><h3 class="path">contexts/</h3><p>Guidance for one kind of session, like an agent file. <em>Researching job companies.</em> You can also use one alone for a small session.</p></div>
+  <div class="card c-flow"><h3 class="path">workflows/</h3><p>Short procedures for one specific job, like a skill. <em>Customizing resume bullets to keep their formatting and length.</em></p></div>
+  <div class="card c-graph"><h3 class="path">graph/</h3><p>Merged from the recordings you choose, down to the system events, so agents can look up what actually happened.</p></div>
 </div>
 
-<h2>See it working</h2>
-<div class="feature"><div><h3>Record a session</h3><p>Pick a duration, or stop when you're done. Keystrokes are never recorded, and password managers are skipped.</p></div><figure class="demo"><img src="assets/gifs/record.gif?v=2" alt="Starting a recording, watching its live stats, then stopping it to build the graph" loading="lazy"></figure></div>
-<div class="feature"><div><h3>Generate contexts and workflows</h3><p>A model reads everything recorded and names the kinds of session it shows. You can use OpenAI, Anthropic, Gemini, OpenRouter, or a local model.</p></div><figure class="demo"><img src="assets/gifs/contexts.gif?v=3" alt="Generating context files and workflows from a recording, then opening one" loading="lazy"></figure></div>
-<div class="feature"><div><h3>Ask about any recording</h3><p>Every recording opens on its 3D knowledge graph with a chat beneath it. Answers cite the frames they came from.</p></div><figure class="demo"><img src="assets/gifs/graph.gif?v=2" alt="Rotating the knowledge graph, opening a node, and asking what's unfinished" loading="lazy"></figure></div>
-<div class="feature"><div><h3>Edit it like code</h3><p>Harnesses open in an editor with your files on the left and a chat on the right. Ask for a change, review it, and undo it if it's wrong.</p></div><figure class="demo"><img src="assets/gifs/chat.gif?v=2" alt="Asking the chat to edit AGENTS.md, reviewing the change in source, and undoing it" loading="lazy"></figure></div>
+<h2>Chronicle in Action</h2>
+<div class="feature"><div><h3>1. Record a session</h3><p>Pick a duration, or stop when you're done. Keystrokes are never recorded, and password managers are skipped.</p></div><figure class="demo"><img src="assets/gifs/record.gif?v=5" alt="Starting a recording, watching its live stats, then stopping it to build the graph" loading="lazy"></figure></div>
+<div class="feature"><div><h3>2. Generate contexts and workflows</h3><p>A model reads everything recorded and names the kinds of session it shows. You can use OpenAI, Anthropic, Gemini, OpenRouter, or a local model.</p></div><figure class="demo"><img src="assets/gifs/contexts.gif?v=5" alt="Generating context files and workflows from a recording, then opening one" loading="lazy"></figure></div>
+<div class="feature"><div><h3>3. Ask your knowledge graph</h3><p>Knowledge opens on a 3D graph of all your history with a chat beside it. Answers cite the frames they came from, and the chat can propose a harness to build.</p></div><figure class="demo"><img src="assets/gifs/graph.gif?v=5" alt="Rotating the knowledge graph, opening a node, and asking what's unfinished" loading="lazy"></figure></div>
+<div class="feature"><div><h3>4. Edit it like code</h3><p>Harnesses open in an editor with your files on the left and a chat on the right. Ask for a change, review it, and undo it if it's wrong.</p></div><figure class="demo"><img src="assets/gifs/chat.gif?v=5" alt="Asking the chat to edit AGENTS.md, reviewing the change in source, and undoing it" loading="lazy"></figure></div>
 <p class="caption">Everything shown is a synthetic sample workday, with no real screen data. Time spent waiting on the model is cut.</p>
 
 <h2>Try it in a minute</h2>
 <p>You need <a href="https://docs.astral.sh/uv/">uv</a>. The sample workday lets you explore everything before recording anything.</p>
-<pre><code>uv tool install "chronicle-context[graph]"
+<pre><code>uv tool install --python 3.12 "chronicle-context[graph]"
 chronicle demo
 chronicle serve</code></pre>
 <p>Then open <code>http://127.0.0.1:3030</code>. <a href="docs.html#quickstart">The quickstart</a> walks through the rest.</p>

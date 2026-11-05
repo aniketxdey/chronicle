@@ -221,3 +221,70 @@ def test_dry_run_writes_plan(tmp_path):
     assert len(plan["tasks"]) == 4 and {t for _, t in plan["tasks"]} <= {"001", "002", "003", "004", "005"}
     assert [len(w) for w in plan["waves"]] == [4]
     assert (out / "chronicle" / "waves" / "wave_000.json").exists()
+
+
+def test_smoke_evidence_matching_and_budget_parity(bench_home):
+    import smoke
+
+    output = smoke.normalized("Caroline: I went to a LGBTQ support group yesterday, and it was powerful.")
+    assert smoke.evidence_found("I went to a LGBTQ support group yesterday!", output)
+    assert smoke.evidence_found("Went to a LGBTQ", output)
+    assert not smoke.evidence_found("Caroline adopted a dog from the shelter last spring", output)
+    assert not smoke.evidence_found("", output)
+
+    low, high = smoke.cluster_ci([[1.0, 1.0], [0.0], [1.0, 0.0, 1.0]], resamples=500)
+    assert 0 <= low <= high <= 1
+    assert smoke.cluster_ci([]) != smoke.cluster_ci([[1.0]])
+
+    assert len(smoke.recency_text(memory.BUDGET_CHARS)) <= memory.BUDGET_CHARS + smoke.BLOCK_OVERHEAD
+
+
+def test_smoke_locomo_evidence_ids_in_every_format(tmp_path):
+    import smoke
+
+    sample = {"sample_id": "c1", "qa": [
+        {"question": "One?", "category": 4, "evidence": ["D1:1"]},
+        {"question": "Two?", "category": 1, "evidence": ["D1:1; D1:2"]},
+        {"question": "Missing?", "category": 5, "evidence": ["D9:9"]},
+    ], "conversation": {
+        "session_1_date_time": "1:56 pm on 8 May, 2023",
+        "session_1": [{"speaker": "A", "dia_id": "D1:1", "text": "first"}, {"speaker": "B", "dia_id": "D1:2", "text": "second", "blip_caption": "a dog"}],
+    }}
+    path = tmp_path / "locomo.json"
+    path.write_text(json.dumps([sample]))
+    item = smoke.load_locomo(path)[0]
+    assert [q["evidence"] for q in item["questions"]] == [["first"], ["first", "second"], []]
+    assert item["questions"][0]["category"] == "single-hop"
+    assert "a dog" in item["sessions"][0]["turns"][1]["text"]
+
+
+def test_smoke_ignores_fields_ingest_should_never_read(bench_home):
+    import smoke
+
+    spool = bench_home / "t.jsonl"
+    stamp = "2026-01-01T00:00:00.000Z"
+    spool.write_text("".join(json.dumps(r) + "\n" for r in [
+        {"type": "task_start", "ts": stamp, "instruction": "Find report R-77", "config": smoke.CANARY},
+        {"type": "step", "ts": stamp, "app": "Chrome", "window": "Reports", "text": "report R-77 is filed", "source": "accessibility",
+         "reward": smoke.CANARY, "info": smoke.CANARY},
+        {"type": "result", "ts": stamp, "text": smoke.CANARY},
+    ]))
+    memory.ingest_task(spool)
+    for arm in ("search", "chronicle"):
+        assert smoke.CANARY not in memory.context_for(arm, "Find report R-77")
+
+
+def test_context_evidence_ranks_by_relevance_not_recency(bench_home):
+    from chronicle import content, context, search
+
+    content.add_screen(text="Caroline went to the LGBTQ support group on 7 May and found it powerful", app_name="Messages", window_name="old",
+                       timestamp="2023-05-08T10:00:00.000Z")
+    for index in range(20):
+        content.add_screen(text=f"Melanie went to the shops, note {index}", app_name="Messages", window_name="new",
+                           timestamp=f"2023-06-{index + 1:02d}T10:00:00.000Z")
+    content.add_screen(text="Caroline went to the LGBTQ support group on 7 May and found it powerful", app_name="Messages", window_name="reopened",
+                       timestamp="2023-06-25T10:00:00.000Z")
+    pack = context.build(task="When did Caroline go to the LGBTQ support group?", max_evidence=3)
+    assert "LGBTQ support group" in pack["evidence"][0]["text"]
+    assert sum("LGBTQ" in item["text"] for item in pack["evidence"]) == 1, "a repeated passage appears once"
+    assert search.relevant("") == [] and search.relevant("group", limit=0) == []

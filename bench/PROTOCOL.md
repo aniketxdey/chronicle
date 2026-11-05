@@ -88,6 +88,19 @@ python bench/analyze.py bench/runs/v2-pilot --price-in 3 --price-out 15 --price-
 
 Arguments after `--` go to OSWorld's `run_multienv_claude.py` unchanged. `run_pilot.py` resumes from `plan.json` and skips waves that are already ingested.
 
+## Smoke test
+
+`bench/smoke.py` checks the memory path without an agent or a VM. It isn't part of this protocol's results and says nothing about task success.
+
+- **Retrieval.** LoCoMo and LongMemEval are converted to the recorder's spool format, one dialogue turn per frame, and ingested into a fresh Chronicle home per conversation or question. Each question goes through `chronicle`, `search`, and a `recency` floor at the same budget. Evidence recall counts an annotated evidence turn as found when six consecutive words of it (or all of it, if shorter) appear in the output. Stop events are moved to the end of each replayed session, because `sessions.stop` stamps the wall clock and would otherwise rank ahead of years-old frames.
+- **Harness.** `run_pilot.py --dry-run` plans both benchmarks. OSWorld-Verified instructions with synthetic screen text then go through ingestion and `context_for`, checking the budget and that evaluator strings and canaries in ignored fields never reach the context.
+
+```bash
+python bench/smoke.py --data bench/runs/datasets --out bench/runs/smoke --lme 470 --workers 6
+```
+
+The datasets are public: `xlang-ai/OSWorld`, `xlang-ai/OSWorld-V2` at `osworld-v2.1`, `snap-research/locomo`, and `longmemeval_s` from `xiaowu0162/longmemeval` on Hugging Face.
+
 ## Changes
 
-None yet.
+None to the pilot's arms, tasks, or metrics. Before any scored run, the smoke test showed that the `get_context` evidence section was ordered by time, so `chronicle` now gets evidence ranked by BM25 through `search.relevant`, limited to 6 passages. The `search` arm is unchanged.

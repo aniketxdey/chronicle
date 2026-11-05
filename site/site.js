@@ -36,7 +36,7 @@
   const links = [...document.querySelectorAll(".side-group a")];
   const sections = links.map((link) => document.getElementById(link.hash.slice(1))).filter(Boolean);
   const toc = document.getElementById("toc");
-  const headings = [...doc.querySelectorAll("h2, h3")];
+  const headings = [...doc.querySelectorAll(":scope > h2, :scope > h3")];
   const slug = (text) => text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   headings.forEach((heading) => { if (!heading.id) heading.id = slug(heading.textContent); });
 
@@ -50,14 +50,21 @@
     toc.innerHTML = inner.map((heading) => `<a href="#${heading.id}">${heading.textContent}</a>`).join("");
   };
   const sync = () => {
-    const y = window.scrollY + 110;
+    const y = window.scrollY + 150;
     const section = sections.filter((item) => item.offsetTop <= y).pop() || sections[0];
     if (section !== current) {
       current = section;
       links.forEach((link) => {
         const on = link.hash === `#${section.id}`;
         link.classList.toggle("on", on);
-        if (on) link.scrollIntoView({ block: "nearest" });
+        if (on) {
+          // Scroll only the sidebar: scrollIntoView would also interrupt the page's own smooth scroll.
+          const nav = link.closest(".doc-nav");
+          const box = link.getBoundingClientRect();
+          const frame = nav.getBoundingClientRect();
+          if (box.top < frame.top) nav.scrollTop -= frame.top - box.top;
+          else if (box.bottom > frame.bottom) nav.scrollTop += box.bottom - frame.bottom;
+        }
       });
       paintToc(section);
     }
