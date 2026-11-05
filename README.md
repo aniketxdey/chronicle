@@ -1,12 +1,10 @@
 ![Chronicle's Knowledge page showing the knowledge graph and chat for the sample workday](https://raw.githubusercontent.com/aniketxdey/chronicle/main/docs/assets/headline.png)
 
-*The Knowledge page on the synthetic sample workday that `chronicle demo` loads. The image shows no real screen data.*
-
 # Chronicle
 
 <!-- mcp-name: io.github.aniketxdey/chronicle -->
 
-Chronicle records your screen and system events on your computer, writes context files and workflows from them, and builds them into agent harnesses. Any AI can use a harness over MCP or as downloaded files.
+Record your screen and system events on your computer, write context files and workflows from them, and build them into LLM harnesses for any task. Any AI can use a harness over MCP or as downloaded files.
 
 The [full documentation](https://aniketxdey.github.io/chronicle/docs.html) covers the app, every command, and the API.
 
