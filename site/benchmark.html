@@ -29,7 +29,7 @@
 
 <nav class="toc-inline" aria-label="On this page">
   <a href="#osworld">OSWorld pilot</a>
-  <a href="#method">Method</a>
+  <a href="#method">Methodology</a>
   <a href="#retrieval">Retrieval</a>
   <a href="#graph">Graph Build & Quality</a>
   <a href="#harness">Harness Robustness</a>
@@ -37,7 +37,7 @@
 </nav>
 
 <h2 id="osworld">OSWorld pilot</h2>
-<p>The pilot calls for one run per task and arm using Claude Sonnet 4.6.</p>
+<p>One run per task, using Claude Sonnet 4.6 as the primary model.</p>
 
 <h3>OSWorld 2.0: 20 implicit-state tasks, 150 steps</h3>
 <div class="table-wrap"><table>
@@ -69,8 +69,8 @@
   <tr><td>Chronicle vs raw</td><td>Second half</td><td>0.0 pp</td><td>[-16.7, +16.7] pp</td><td>4 / 4</td><td>1.000</td></tr>
 </table></div>
 
-<h2 id="method">Method</h2>
-<h3>Benchmarks</h3>
+<h2 id="method">Methodology</h2>
+<h3>Results</h3>
 <div class="table-wrap"><table>
   <tr><th>Benchmark</th><th>Why</th></tr>
   <tr><td><a href="https://arxiv.org/abs/2606.29537">OSWorld 2.0</a></td><td>108 long workflows in Ubuntu VMs with self-hosted services. 43 of them are tagged implicit-state inference: the agent has to recover state the instruction doesn't give it, which is the problem Chronicle is built for.</td></tr>
