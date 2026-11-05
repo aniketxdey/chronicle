@@ -94,7 +94,7 @@
 </table></div>
 <p>Both memory arms receive the same preamble and the same 8,000-character budget, which the harness adds to the instruction at the start of each task. The plain-memory arm separates the value of the graph from the value of having any history at all. The full protocol is in <a href="https://github.com/aniketxdey/chronicle/blob/main/bench/PROTOCOL.md"><code>bench/PROTOCOL.md</code></a>.</p>
 
-<h2 id="retrieval">Measured: retrieval smoke test</h2>
+<h2 id="retrieval">Retrieval Test</h2>
 <p>This ran through the same ingestion and context code as the OSWorld arms, with no agent and no VM. It asks whether the text that answers a question reaches the agent at all. <strong>It measures retrieval on conversational datasets, not whether an agent completes more tasks</strong>, and Chronicle's graph was built without a model.</p>
 <p class="result"><strong>Plain search still found more evidence than Chronicle's context pack, by 19.9 points on LoCoMo and 14.9 on LongMemEval.</strong> The pack beat simply handing over the newest frames by 40.0 and 71.6 points. It carries 6 evidence passages next to its graph, while search spends the whole budget on up to 40.</p>
 
@@ -185,7 +185,7 @@ git clone --depth 1 --branch osworld-v2.1 https://github.com/xlang-ai/OSWorld-V2
 git clone --depth 1 https://github.com/snap-research/locomo
 curl -L -o longmemeval/longmemeval_s https://huggingface.co/datasets/xiaowu0162/longmemeval/resolve/main/longmemeval_s
 cd ../../..
-python bench/smoke.py --data bench/runs/datasets --out bench/runs/smoke --lme 470 --workers 6
+python bench/retrieval.py --data bench/runs/datasets --out bench/runs/retrieval --lme 470 --workers 6
 PYTHONPATH=. python scripts/bench_graph.py
 PYTHONPATH=. python scripts/eval_graph.py</code></pre>
 </main>
