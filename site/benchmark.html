@@ -30,9 +30,9 @@
 <nav class="toc-inline" aria-label="On this page">
   <a href="#osworld">OSWorld pilot</a>
   <a href="#method">Method</a>
-  <a href="#retrieval">Measured: retrieval</a>
-  <a href="#graph">Measured: graph</a>
-  <a href="#harness">Measured: harness checks</a>
+  <a href="#retrieval">Retrieval</a>
+  <a href="#graph">Graph Build & Quality</a>
+  <a href="#harness">Harness Robustness</a>
   <a href="#reproduce">Reproduce</a>
 </nav>
 
@@ -147,7 +147,7 @@
   <li><strong>Latency.</strong> Measured on an arm64 laptop with Python 3.14 and 6 worker processes running at once, so it's an upper bound on an idle machine.</li>
 </ul>
 
-<h2 id="graph">Measured: graph build and quality</h2>
+<h2 id="graph">Graph Build & Quality</h2>
 <div class="table-wrap"><table>
   <tr><th>Graph operation, 6,000 synthetic frames in 20 sessions</th><th>Time</th></tr>
   <tr><td>A session ends: extract it and regroup</td><td>2.68 s</td></tr>
@@ -168,7 +168,7 @@
 </table></div>
 <p class="caption">One run on Chronicle's own small sample data, so this is a regression check rather than a general quality claim.</p>
 
-<h2 id="harness">Measured: harness checks</h2>
+<h2 id="harness">Harness Robustness</h2>
 <p>These confirm the pilot's code path works. They produce no scores.</p>
 <ul>
   <li>Planning ran for both benchmarks: 108 OSWorld 2.0 tasks at <code>osworld-v2.1</code> with 43 implicit-state, sampled to 20 tasks in 5 waves; 360 OSWorld-Verified tasks across 10 domains, sampled to 60 in 15 waves.</li>
