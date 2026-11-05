@@ -1,6 +1,6 @@
-![Chronicle knowledge graph view of the sample workday](https://raw.githubusercontent.com/aniketxdey/chronicle/main/docs/assets/headline.png)
+![Chronicle's Knowledge page showing the knowledge graph and chat for the sample workday](https://raw.githubusercontent.com/aniketxdey/chronicle/main/docs/assets/headline.png)
 
-*A knowledge graph of the synthetic sample workday that `chronicle demo` loads. The image shows no real screen data.*
+*The Knowledge page on the synthetic sample workday that `chronicle demo` loads. The image shows no real screen data.*
 
 # Chronicle
 
